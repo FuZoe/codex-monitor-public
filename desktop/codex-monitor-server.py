@@ -88,7 +88,11 @@ class CodexSessionTracker:
         self.offset = 0
         self.partial_line = ""
         self.session_id = path.stem  # rollout-XXXX
-        self.last_event_at = time.time()
+        # Use file mtime so old files aren't treated as just-active
+        try:
+            self.last_event_at = path.stat().st_mtime
+        except OSError:
+            self.last_event_at = 0.0
         self.last_state = "idle"
         self.last_event_text = ""
         self.cwd = ""
@@ -149,12 +153,43 @@ class CodexSessionTracker:
             mapped = EVENT_STATE_MAP.get(key)
             if mapped:
                 self.last_state = mapped
-                self.last_event_at = time.time()
+                # Use event timestamp if available, otherwise file-read time
+                event_ts = self._extract_timestamp(event)
+                self.last_event_at = event_ts if event_ts else time.time()
                 self.last_event_text = key
 
             # Try to extract cwd
             if isinstance(payload, dict) and "cwd" in payload:
                 self.cwd = payload["cwd"]
+
+    @staticmethod
+    def _extract_timestamp(event):
+        """Try to extract a Unix timestamp from a JSONL event."""
+        # Codex JSONL events may have a top-level "timestamp" or nested timestamp
+        for field in ("timestamp", "ts", "time"):
+            val = event.get(field)
+            if isinstance(val, (int, float)) and val > 1_000_000_000:
+                return float(val)
+            if isinstance(val, str):
+                try:
+                    dt = datetime.fromisoformat(val)
+                    return dt.timestamp()
+                except (ValueError, TypeError):
+                    pass
+        # Check payload.timestamp
+        payload = event.get("payload", {})
+        if isinstance(payload, dict):
+            for field in ("timestamp", "ts", "time"):
+                val = payload.get(field)
+                if isinstance(val, (int, float)) and val > 1_000_000_000:
+                    return float(val)
+                if isinstance(val, str):
+                    try:
+                        dt = datetime.fromisoformat(val)
+                        return dt.timestamp()
+                    except (ValueError, TypeError):
+                        pass
+        return None
 
     def get_effective_state(self):
         """Get current state with decay applied."""
@@ -249,9 +284,9 @@ class CodexSessionMonitor:
                 if events:
                     tracker.process_events(events)
 
-            # Remove stale trackers
+            # Remove stale trackers (sleeping sessions aren't useful to keep)
             for key in list(self.trackers.keys()):
-                if self.trackers[key].is_stale() and key not in active_files:
+                if self.trackers[key].is_stale():
                     del self.trackers[key]
 
             # Compute aggregate state
@@ -266,12 +301,16 @@ class CodexSessionMonitor:
 
         for tracker in self.trackers.values():
             state = tracker.get_effective_state()
-            if state != "sleeping":
+            if state not in ("sleeping", "idle"):
                 active_count += 1
+                active_states.append(state)
+            elif state == "idle":
                 active_states.append(state)
             if tracker.last_event_at > latest_event_time:
                 latest_event_time = tracker.last_event_at
                 latest_event_text = tracker.last_event_text
+
+        self._last_event_time = latest_event_time
 
         # Check forced (min display) state
         now = time.time()
@@ -302,7 +341,7 @@ class CodexSessionMonitor:
         self.current_label = STATE_LABEL_MAP.get(chosen, "空闲")
         self.current_detail = f"最近事件：{latest_event_text}" if latest_event_text else ""
         self.active_sessions = active_count
-        self.last_update = now
+        self.last_update = latest_event_time if latest_event_time > 0 else now
 
         # Keep event log (last 10)
         if latest_event_text and (
@@ -337,7 +376,17 @@ class CodexSessionMonitor:
     def get_status(self):
         """Get the current aggregated status dict."""
         with self.lock:
-            elapsed = time.time() - self.last_update
+            # freshness reflects time since last real event, not last scan
+            last_ev = getattr(self, '_last_event_time', 0.0)
+            if last_ev > 0:
+                elapsed = time.time() - last_ev
+                updated_at = datetime.fromtimestamp(
+                    last_ev, tz=timezone.utc
+                ).isoformat()
+            else:
+                elapsed = 0.0
+                updated_at = datetime.now(timezone.utc).isoformat()
+
             if elapsed < 5:
                 freshness = "刚刚"
             elif elapsed < 60:
@@ -353,7 +402,7 @@ class CodexSessionMonitor:
                 "headline": f"Codex {self.current_label}",
                 "detail": self.current_detail,
                 "animation": self.current_animation,
-                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "updatedAt": updated_at,
                 "freshness": freshness,
                 "activeSessions": self.active_sessions,
                 "events": self.events_log[:5],
