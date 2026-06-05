@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Monitor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d10;
+      --panel: #15191f;
+      --panel-strong: #1d232b;
+      --text: #f4f7fb;
+      --muted: #94a3b8;
+      --line: rgba(255, 255, 255, .09);
+      --green: #38d996;
+      --yellow: #ffd166;
+      --red: #ff6b6b;
+      --cyan: #58c7f3;
+      --blue: #7aa2ff;
+      --shadow: 0 20px 60px rgba(0, 0, 0, .35);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(88, 199, 243, .13), transparent 27%),
+        linear-gradient(135deg, #0b0d10 0%, #13151a 48%, #11161c 100%);
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .app {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 20px 0 28px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 12px 0 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 7vw, 84px);
+      line-height: .92;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: clamp(14px, 2vw, 18px);
+    }
+
+    .clock {
+      min-width: 168px;
+      text-align: right;
+      color: var(--muted);
+    }
+
+    .clock strong {
+      display: block;
+      color: var(--text);
+      font-size: clamp(24px, 4vw, 42px);
+      font-weight: 800;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(320px, .92fr);
+      gap: 16px;
+    }
+
+    .panel {
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero-status {
+      min-height: 390px;
+      padding: clamp(18px, 3vw, 30px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-status::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(56, 217, 150, .18), transparent 48%),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, .045) 0 1px, transparent 1px 86px);
+      opacity: .55;
+      pointer-events: none;
+    }
+
+    .panel > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .status-pill {
+      min-width: 122px;
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: rgba(56, 217, 150, .14);
+      color: var(--green);
+      font-weight: 800;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 0 18px currentColor;
+      flex: 0 0 auto;
+    }
+
+    .status-text {
+      align-self: center;
+    }
+
+    .status-text h2 {
+      margin: 0;
+      font-size: clamp(42px, 11vw, 128px);
+      line-height: .88;
+      letter-spacing: 0;
+    }
+
+    .task {
+      width: min(680px, 100%);
+      margin-top: 16px;
+      color: #d7e1ee;
+      font-size: clamp(16px, 2.2vw, 24px);
+      line-height: 1.36;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-height: 88px;
+      padding: 14px;
+      background: rgba(255, 255, 255, .045);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      font-size: clamp(22px, 4vw, 38px);
+      line-height: 1;
+      overflow-wrap: anywhere;
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .quota {
+      padding: 22px;
+    }
+
+    .quota-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .quota-head h2,
+    .controls h2,
+    .log h2 {
+      margin: 0;
+      font-size: 19px;
+      letter-spacing: 0;
+    }
+
+    .quota-value {
+      font-size: clamp(38px, 8vw, 72px);
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .ring {
+      width: min(280px, 68vw);
+      aspect-ratio: 1;
+      margin: 4px auto 22px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: conic-gradient(var(--green) calc(var(--quota) * 1%), rgba(255, 255, 255, .08) 0);
+      position: relative;
+    }
+
+    .ring::after {
+      content: "";
+      position: absolute;
+      inset: 16px;
+      border-radius: 50%;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+
+    .ring-content {
+      z-index: 1;
+      text-align: center;
+    }
+
+    .ring-content strong {
+      display: block;
+      font-size: clamp(42px, 10vw, 80px);
+      line-height: .9;
+    }
+
+    .ring-content span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .bar {
+      height: 13px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      width: calc(var(--quota) * 1%);
+      background: linear-gradient(90deg, var(--green), var(--cyan));
+      border-radius: inherit;
+    }
+
+    .quota-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .controls {
+      padding: 18px;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .segmented button,
+    .save {
+      min-height: 42px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: var(--text);
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .segmented button.active {
+      background: rgba(122, 162, 255, .2);
+      border-color: rgba(122, 162, 255, .45);
+      color: #dbe6ff;
+    }
+
+    .form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field.wide {
+      grid-column: 1 / -1;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .055);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 11px 12px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 74px;
+      resize: vertical;
+    }
+
+    .save {
+      grid-column: 1 / -1;
+      background: var(--green);
+      color: #07100c;
+      border: 0;
+    }
+
+    .log {
+      padding: 18px;
+    }
+
+    .log-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .log-item {
+      display: grid;
+      grid-template-columns: 70px minmax(0, 1fr);
+      gap: 12px;
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+      color: #d9e2ee;
+      font-size: 14px;
+    }
+
+    .log-item time {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 860px) {
+      .app {
+        width: min(100% - 20px, 720px);
+        padding-top: 10px;
+      }
+
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+
+      .clock {
+        text-align: left;
+      }
+
+      .layout,
+      .metrics,
+      .form {
+        grid-template-columns: 1fr;
+      }
+
+      .segmented {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .hero-status {
+        min-height: 360px;
+      }
+    }
+
+    @media (max-width: 430px) {
+      .app {
+        width: calc(100% - 14px);
+      }
+
+      .hero-status,
+      .quota,
+      .controls,
+      .log {
+        padding: 14px;
+      }
+
+      .status-pill {
+        min-width: 106px;
+        height: 32px;
+      }
+
+      .log-item {
+        grid-template-columns: 54px minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="topbar">
+      <div>
+        <h1>Codex Monitor</h1>
+        <div class="subtitle" id="sourceText">JSON 同步中</div>
+      </div>
+      <div class="clock">
+        <strong id="clockTime">--:--</strong>
+        <span id="clockDate">----</span>
+      </div>
+    </section>
+
+    <section class="layout">
+      <article class="panel hero-status">
+        <div class="label-row">
+          <span>工作状态</span>
+          <span class="status-pill" id="statusPill"><i class="dot"></i><span id="statusPillText">读取中</span></span>
+        </div>
+
+        <div class="status-text">
+          <h2 id="statusTitle">同步中</h2>
+          <div class="task" id="taskText">等待状态文件...</div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric">
+            <span>当前回合</span>
+            <strong id="turnText">--</strong>
+          </div>
+          <div class="metric">
+            <span>最近更新</span>
+            <strong id="updatedText">--</strong>
+          </div>
+          <div class="metric">
+            <span>运行时长</span>
+            <strong id="elapsedText">--</strong>
+          </div>
+        </div>
+      </article>
+
+      <aside class="stack">
+        <article class="panel quota">
+          <div class="quota-head">
+            <h2>5 小时限额</h2>
+            <div class="quota-value" id="fiveHourQuotaShort">--%</div>
+          </div>
+          <div class="ring" id="fiveHourQuotaRing" style="--quota: 0">
+            <div class="ring-content">
+              <strong id="fiveHourQuotaRemain">--</strong>
+              <span id="fiveHourQuotaUnit">remaining</span>
+            </div>
+          </div>
+          <div class="bar" id="fiveHourQuotaBar" style="--quota: 0"><span></span></div>
+          <div class="quota-meta">
+            <span id="fiveHourQuotaUsed">已用 --</span>
+            <span id="fiveHourQuotaLimit">上限 --</span>
+          </div>
+        </article>
+
+        <article class="panel quota">
+          <div class="quota-head">
+            <h2>周限额</h2>
+            <div class="quota-value" id="weeklyQuotaShort">--%</div>
+          </div>
+          <div class="ring" id="weeklyQuotaRing" style="--quota: 0">
+            <div class="ring-content">
+              <strong id="weeklyQuotaRemain">--</strong>
+              <span id="weeklyQuotaUnit">remaining</span>
+            </div>
+          </div>
+          <div class="bar" id="weeklyQuotaBar" style="--quota: 0"><span></span></div>
+          <div class="quota-meta">
+            <span id="weeklyQuotaUsed">已用 --</span>
+            <span id="weeklyQuotaLimit">上限 --</span>
+          </div>
+        </article>
+
+        <article class="panel controls">
+          <h2>快速状态</h2>
+          <div class="segmented" id="stateButtons">
+            <button data-state="working">工作中</button>
+            <button data-state="testing">测试中</button>
+            <button data-state="blocked">卡住</button>
+            <button data-state="done">完成</button>
+          </div>
+
+          <div class="form">
+            <div class="field">
+              <label for="fiveHourUsedInput">5 小时已用</label>
+              <input id="fiveHourUsedInput" inputmode="numeric" type="number" min="0" step="1">
+            </div>
+            <div class="field">
+              <label for="fiveHourLimitInput">5 小时上限</label>
+              <input id="fiveHourLimitInput" inputmode="numeric" type="number" min="1" step="1">
+            </div>
+            <div class="field">
+              <label for="weeklyUsedInput">周已用</label>
+              <input id="weeklyUsedInput" inputmode="numeric" type="number" min="0" step="1">
+            </div>
+            <div class="field">
+              <label for="weeklyLimitInput">周上限</label>
+              <input id="weeklyLimitInput" inputmode="numeric" type="number" min="1" step="1">
+            </div>
+            <div class="field wide">
+              <label for="taskInput">任务</label>
+              <textarea id="taskInput"></textarea>
+            </div>
+            <button class="save" id="saveButton">保存到本机</button>
+          </div>
+        </article>
+
+        <article class="panel log">
+          <h2>动态</h2>
+          <div class="log-list" id="logList"></div>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const fallbackState = {
+      status: "working",
+      title: "工作中",
+      task: "Codex 正在处理当前任务",
+      turn: "当前线程",
+      quotas: [
+        { id: "five_hour", label: "5 小时限额", used: 0, limit: 100, unit: "messages", resetAt: "" },
+        { id: "weekly", label: "周限额", used: 0, limit: 500, unit: "messages", resetAt: "" }
+      ],
+      updatedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      log: [{ time: new Date().toISOString(), text: "监控页面已启动" }]
+    };
+
+    const stateNames = {
+      working: { label: "工作中", color: "var(--green)", bg: "rgba(56, 217, 150, .14)" },
+      thinking: { label: "思考中", color: "var(--cyan)", bg: "rgba(88, 199, 243, .14)" },
+      testing: { label: "测试中", color: "var(--yellow)", bg: "rgba(255, 209, 102, .15)" },
+      blocked: { label: "卡住", color: "var(--red)", bg: "rgba(255, 107, 107, .15)" },
+      done: { label: "完成", color: "var(--blue)", bg: "rgba(122, 162, 255, .15)" }
+    };
+
+    let monitorState = loadLocal();
+
+    function loadLocal() {
+      try {
+        return { ...fallbackState, ...JSON.parse(localStorage.getItem("codex-monitor-state") || "{}") };
+      } catch {
+        return { ...fallbackState };
+      }
+    }
+
+    function saveLocal() {
+      localStorage.setItem("codex-monitor-state", JSON.stringify(monitorState));
+    }
+
+    function mergeState(next, source) {
+      if (!next || typeof next !== "object") return;
+      monitorState = {
+        ...monitorState,
+        ...next
+      };
+      document.getElementById("sourceText").textContent = source;
+      saveLocal();
+      render();
+    }
+
+    function formatClock(date) {
+      return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatDate(date) {
+      return date.toLocaleDateString("zh-CN", { weekday: "short", month: "2-digit", day: "2-digit" });
+    }
+
+    function formatRelative(iso) {
+      if (!iso) return "--";
+      const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+      const seconds = Math.floor(diff / 1000);
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m`;
+      const hours = Math.floor(minutes / 60);
+      return `${hours}h ${minutes % 60}m`;
+    }
+
+    function setQuotaPercent(prefix, percent) {
+      const clamped = Math.max(0, Math.min(100, percent));
+      document.getElementById(`${prefix}QuotaRing`).style.setProperty("--quota", clamped);
+      document.getElementById(`${prefix}QuotaBar`).style.setProperty("--quota", clamped);
+    }
+
+    function quotaFor(id, fallback) {
+      const quotas = Array.isArray(monitorState.quotas) ? monitorState.quotas : [];
+      const match = quotas.find((item) => item.id === id);
+      if (match) return match;
+      if (monitorState.quota) return { ...fallback, ...monitorState.quota };
+      return fallback;
+    }
+
+    function renderQuota(prefix, quota) {
+      const used = Number(quota.used || 0);
+      const limit = Math.max(1, Number(quota.limit || 1));
+      const remaining = Math.max(0, limit - used);
+      const percent = Math.round((remaining / limit) * 100);
+      document.getElementById(`${prefix}QuotaShort`).textContent = `${percent}%`;
+      document.getElementById(`${prefix}QuotaRemain`).textContent = remaining.toLocaleString("zh-CN");
+      document.getElementById(`${prefix}QuotaUnit`).textContent = quota.unit || "remaining";
+      document.getElementById(`${prefix}QuotaUsed`).textContent = `已用 ${used.toLocaleString("zh-CN")}`;
+      document.getElementById(`${prefix}QuotaLimit`).textContent = `上限 ${limit.toLocaleString("zh-CN")}`;
+      setQuotaPercent(prefix, percent);
+      return { used, limit };
+    }
+
+    function render() {
+      const status = stateNames[monitorState.status] || stateNames.working;
+      const fiveHourQuota = quotaFor("five_hour", fallbackState.quotas[0]);
+      const weeklyQuota = quotaFor("weekly", fallbackState.quotas[1]);
+      const pill = document.getElementById("statusPill");
+
+      pill.style.color = status.color;
+      pill.style.background = status.bg;
+      document.getElementById("statusPillText").textContent = status.label;
+      document.getElementById("statusTitle").textContent = monitorState.title || status.label;
+      document.getElementById("taskText").textContent = monitorState.task || "暂无任务";
+      document.getElementById("turnText").textContent = monitorState.turn || "--";
+      document.getElementById("updatedText").textContent = formatRelative(monitorState.updatedAt);
+      document.getElementById("elapsedText").textContent = formatRelative(monitorState.startedAt);
+
+      const fiveHourValues = renderQuota("fiveHour", fiveHourQuota);
+      const weeklyValues = renderQuota("weekly", weeklyQuota);
+      document.getElementById("fiveHourUsedInput").value = fiveHourValues.used;
+      document.getElementById("fiveHourLimitInput").value = fiveHourValues.limit;
+      document.getElementById("weeklyUsedInput").value = weeklyValues.used;
+      document.getElementById("weeklyLimitInput").value = weeklyValues.limit;
+      document.getElementById("taskInput").value = monitorState.task || "";
+      document.querySelectorAll("#stateButtons button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.state === monitorState.status);
+      });
+
+      const logList = document.getElementById("logList");
+      const items = Array.isArray(monitorState.log) ? monitorState.log.slice(0, 8) : [];
+      logList.innerHTML = items.map((item) => {
+        const time = item.time ? formatClock(new Date(item.time)) : "--:--";
+        return `<div class="log-item"><time>${time}</time><div>${escapeHtml(item.text || "")}</div></div>`;
+      }).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function pollJson() {
+      try {
+        const response = await fetch("codex-status.json?ts=" + Date.now(), { cache: "no-store" });
+        if (!response.ok) throw new Error("status file missing");
+        mergeState(await response.json(), "JSON 已同步");
+      } catch {
+        document.getElementById("sourceText").textContent = "使用本机保存状态";
+      }
+    }
+
+    document.getElementById("stateButtons").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-state]");
+      if (!button) return;
+      const label = stateNames[button.dataset.state].label;
+      mergeState({
+        status: button.dataset.state,
+        title: label,
+        updatedAt: new Date().toISOString(),
+        log: [{ time: new Date().toISOString(), text: `状态切换为 ${label}` }, ...(monitorState.log || [])]
+      }, "已保存到本机");
+    });
+
+    document.getElementById("saveButton").addEventListener("click", () => {
+      const fiveHourUsed = Number(document.getElementById("fiveHourUsedInput").value || 0);
+      const fiveHourLimit = Number(document.getElementById("fiveHourLimitInput").value || 100);
+      const weeklyUsed = Number(document.getElementById("weeklyUsedInput").value || 0);
+      const weeklyLimit = Number(document.getElementById("weeklyLimitInput").value || 500);
+      const task = document.getElementById("taskInput").value.trim();
+      mergeState({
+        task,
+        quotas: [
+          { id: "five_hour", label: "5 小时限额", used: fiveHourUsed, limit: fiveHourLimit, unit: "messages", resetAt: "" },
+          { id: "weekly", label: "周限额", used: weeklyUsed, limit: weeklyLimit, unit: "messages", resetAt: "" }
+        ],
+        updatedAt: new Date().toISOString(),
+        log: [{ time: new Date().toISOString(), text: "5 小时与周限额已更新" }, ...(monitorState.log || [])]
+      }, "已保存到本机");
+    });
+
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById("clockTime").textContent = formatClock(now);
+      document.getElementById("clockDate").textContent = formatDate(now);
+      document.getElementById("updatedText").textContent = formatRelative(monitorState.updatedAt);
+      document.getElementById("elapsedText").textContent = formatRelative(monitorState.startedAt);
+    }, 1000);
+
+    pollJson();
+    render();
+    setInterval(pollJson, 2500);
+  </script>
+</body>
+</html>

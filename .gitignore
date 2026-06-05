@@ -1,0 +1,17 @@
+# Runtime state
+desktop/codex-status.json
+
+# Android build outputs
+android/build/
+*.idsig
+*.keystore
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

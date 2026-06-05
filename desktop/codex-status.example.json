@@ -1,0 +1,32 @@
+{
+  "status": "working",
+  "title": "工作中",
+  "task": "Codex 状态同步中",
+  "turn": "当前线程",
+  "quotas": [
+    {
+      "id": "five_hour",
+      "label": "5 小时限额",
+      "used": 58,
+      "limit": 100,
+      "unit": "%",
+      "resetAt": ""
+    },
+    {
+      "id": "weekly",
+      "label": "周限额",
+      "used": 16,
+      "limit": 100,
+      "unit": "%",
+      "resetAt": ""
+    }
+  ],
+  "updatedAt": "2026-06-05T23:02:00+08:00",
+  "startedAt": "2026-06-05T23:02:00+08:00",
+  "log": [
+    {
+      "time": "2026-06-05T23:02:00+08:00",
+      "text": "已同步真实额度：5 小时 42%，周限额 84%"
+    }
+  ]
+}
