@@ -3,49 +3,496 @@ import json
 import os
 import socket
 import threading
+import time
+from datetime import datetime, timezone, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
 
 APP_NAME = "codex-monitor"
-VERSION = "1.0"
+VERSION = "2.0"
 DISCOVERY_MESSAGE = b"CODEX_MONITOR_DISCOVER_V1"
+
+# --- Codex JSONL event → state mapping (from clawd-on-desk/agents/codex.js) ---
+
+EVENT_STATE_MAP = {
+    "event_msg:task_started": "thinking",
+    "event_msg:user_message": "thinking",
+    "event_msg:agent_message": "working",
+    "response_item:function_call": "working",
+    "response_item:custom_tool_call": "working",
+    "response_item:web_search_call": "working",
+    "event_msg:task_complete": "attention",
+    "event_msg:context_compacted": "sweeping",
+    "event_msg:turn_aborted": "idle",
+}
+
+# State priority (higher index = higher priority)
+STATE_PRIORITY = [
+    "sleeping",
+    "idle",
+    "thinking",
+    "working",
+    "juggling",
+    "attention",
+    "sweeping",
+    "notification",
+    "error",
+]
+
+# Minimum display time for one-shot states (seconds)
+MIN_DISPLAY_TIME = {
+    "attention": 5,
+    "error": 8,
+    "sweeping": 3,
+    "notification": 5,
+}
+
+# State → animation mapping
+STATE_ANIMATION_MAP = {
+    "thinking": "thinking",
+    "working": "typing",
+    "juggling": "juggling",
+    "attention": "happy",
+    "sweeping": "sweeping",
+    "notification": "notification",
+    "error": "error",
+    "idle": "idle",
+    "sleeping": "sleeping",
+}
+
+# State → Chinese label
+STATE_LABEL_MAP = {
+    "thinking": "思考中",
+    "working": "写代码中",
+    "juggling": "多任务进行中",
+    "attention": "刚完成",
+    "sweeping": "压缩上下文中",
+    "notification": "有通知",
+    "error": "出错了",
+    "idle": "空闲",
+    "sleeping": "睡眠",
+}
+
+# Decay thresholds
+WORKING_DECAY_SECONDS = 30  # working/thinking → idle after 30s no event
+IDLE_DECAY_SECONDS = 300  # idle → sleeping after 5 min no event
+
+
+class CodexSessionTracker:
+    """Tracks a single Codex rollout JSONL file."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.offset = 0
+        self.partial_line = ""
+        self.session_id = path.stem  # rollout-XXXX
+        self.last_event_at = time.time()
+        self.last_state = "idle"
+        self.last_event_text = ""
+        self.cwd = ""
+
+    def read_new_events(self):
+        """Read new lines from the JSONL file incrementally."""
+        events = []
+        try:
+            size = self.path.stat().st_size
+            if size < self.offset:
+                # File was truncated/rotated
+                self.offset = 0
+                self.partial_line = ""
+
+            if size <= self.offset:
+                return events
+
+            with self.path.open("r", encoding="utf-8", errors="replace") as f:
+                f.seek(self.offset)
+                raw = f.read()
+                self.offset = f.tell()
+        except (OSError, IOError):
+            return events
+
+        raw = self.partial_line + raw
+        lines = raw.split("\n")
+        # Last element might be incomplete
+        self.partial_line = lines[-1]
+        lines = lines[:-1]
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                events.append(obj)
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        return events
+
+    def process_events(self, events):
+        """Process events and update state."""
+        for event in events:
+            event_type = event.get("type", "")
+            payload = event.get("payload", {})
+            payload_type = payload.get("type", "") if isinstance(payload, dict) else ""
+
+            # Build event key like clawd-on-desk
+            if event_type and payload_type:
+                key = f"{event_type}:{payload_type}"
+            elif event_type:
+                key = event_type
+            else:
+                continue
+
+            mapped = EVENT_STATE_MAP.get(key)
+            if mapped:
+                self.last_state = mapped
+                self.last_event_at = time.time()
+                self.last_event_text = key
+
+            # Try to extract cwd
+            if isinstance(payload, dict) and "cwd" in payload:
+                self.cwd = payload["cwd"]
+
+    def get_effective_state(self):
+        """Get current state with decay applied."""
+        elapsed = time.time() - self.last_event_at
+
+        # Sleeping takes precedence: any state with no events for 5 min
+        if elapsed > IDLE_DECAY_SECONDS:
+            return "sleeping"
+
+        # Working/thinking decays to idle after 30s
+        if self.last_state in ("working", "thinking"):
+            if elapsed > WORKING_DECAY_SECONDS:
+                return "idle"
+
+        return self.last_state
+
+    def is_stale(self):
+        """Whether this session is too old to track."""
+        return (time.time() - self.last_event_at) > IDLE_DECAY_SECONDS
+
+
+class CodexSessionMonitor:
+    """Monitors all active Codex sessions by scanning JSONL rollout files."""
+
+    def __init__(self):
+        self.sessions_dir = Path.home() / ".codex" / "sessions"
+        self.trackers: dict[str, CodexSessionTracker] = {}
+        self.lock = threading.Lock()
+        self._running = False
+        self._thread = None
+        # Aggregate state
+        self.current_state = "idle"
+        self.current_animation = "idle"
+        self.current_label = "空闲"
+        self.current_detail = ""
+        self.active_sessions = 0
+        self.last_update = time.time()
+        self.events_log: list[dict] = []
+        # Min display state tracking
+        self._forced_state = None
+        self._forced_until = 0.0
+
+    def start(self):
+        """Start background monitoring thread."""
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+
+    def _monitor_loop(self):
+        while self._running:
+            self._scan_and_update()
+            time.sleep(1.0)  # Poll every 1 second
+
+    def _get_scan_dirs(self):
+        """Get today and yesterday's session directories."""
+        dirs = []
+        now = datetime.now()
+        for delta in (0, 1):
+            d = now - timedelta(days=delta)
+            p = self.sessions_dir / d.strftime("%Y") / d.strftime("%m") / d.strftime("%d")
+            if p.is_dir():
+                dirs.append(p)
+        return dirs
+
+    def _scan_and_update(self):
+        """Scan for rollout files and process new events."""
+        if not self.sessions_dir.is_dir():
+            return
+
+        scan_dirs = self._get_scan_dirs()
+        active_files = set()
+
+        for d in scan_dirs:
+            try:
+                for f in d.glob("rollout-*.jsonl"):
+                    active_files.add(str(f))
+                    key = str(f)
+                    if key not in self.trackers:
+                        self.trackers[key] = CodexSessionTracker(f)
+            except OSError:
+                continue
+
+        # Process events for all tracked files
+        with self.lock:
+            for key, tracker in list(self.trackers.items()):
+                events = tracker.read_new_events()
+                if events:
+                    tracker.process_events(events)
+
+            # Remove stale trackers
+            for key in list(self.trackers.keys()):
+                if self.trackers[key].is_stale() and key not in active_files:
+                    del self.trackers[key]
+
+            # Compute aggregate state
+            self._compute_aggregate()
+
+    def _compute_aggregate(self):
+        """Compute the aggregate state from all active sessions."""
+        active_states = []
+        active_count = 0
+        latest_event_text = ""
+        latest_event_time = 0.0
+
+        for tracker in self.trackers.values():
+            state = tracker.get_effective_state()
+            if state != "sleeping":
+                active_count += 1
+                active_states.append(state)
+            if tracker.last_event_at > latest_event_time:
+                latest_event_time = tracker.last_event_at
+                latest_event_text = tracker.last_event_text
+
+        # Check forced (min display) state
+        now = time.time()
+        if self._forced_state and now < self._forced_until:
+            # Honor min display time unless new state has higher priority
+            best_new = self._highest_priority(active_states) if active_states else "idle"
+            if self._priority_of(best_new) <= self._priority_of(self._forced_state):
+                chosen = self._forced_state
+            else:
+                chosen = best_new
+                self._forced_state = None
+        else:
+            self._forced_state = None
+            if not active_states:
+                chosen = "sleeping" if not self.trackers else "idle"
+            elif active_count >= 2 and self._count_working(active_states) >= 2:
+                chosen = "juggling"
+            else:
+                chosen = self._highest_priority(active_states)
+
+        # Set min display for one-shot states
+        if chosen != self.current_state and chosen in MIN_DISPLAY_TIME:
+            self._forced_state = chosen
+            self._forced_until = now + MIN_DISPLAY_TIME[chosen]
+
+        self.current_state = chosen
+        self.current_animation = STATE_ANIMATION_MAP.get(chosen, "idle")
+        self.current_label = STATE_LABEL_MAP.get(chosen, "空闲")
+        self.current_detail = f"最近事件：{latest_event_text}" if latest_event_text else ""
+        self.active_sessions = active_count
+        self.last_update = now
+
+        # Keep event log (last 10)
+        if latest_event_text and (
+            not self.events_log
+            or self.events_log[0].get("text") != STATE_LABEL_MAP.get(chosen, chosen)
+        ):
+            self.events_log.insert(0, {
+                "time": datetime.now(timezone.utc).isoformat(),
+                "text": STATE_LABEL_MAP.get(chosen, chosen),
+            })
+            self.events_log = self.events_log[:10]
+
+    def _highest_priority(self, states):
+        best = "idle"
+        best_p = -1
+        for s in states:
+            p = self._priority_of(s)
+            if p > best_p:
+                best_p = p
+                best = s
+        return best
+
+    def _priority_of(self, state):
+        try:
+            return STATE_PRIORITY.index(state)
+        except ValueError:
+            return -1
+
+    def _count_working(self, states):
+        return sum(1 for s in states if s in ("working", "thinking"))
+
+    def get_status(self):
+        """Get the current aggregated status dict."""
+        with self.lock:
+            elapsed = time.time() - self.last_update
+            if elapsed < 5:
+                freshness = "刚刚"
+            elif elapsed < 60:
+                freshness = f"{int(elapsed)}秒前"
+            elif elapsed < 3600:
+                freshness = f"{int(elapsed // 60)}分钟前"
+            else:
+                freshness = f"{int(elapsed // 3600)}小时前"
+
+            return {
+                "status": self.current_state,
+                "statusLabel": self.current_label,
+                "headline": f"Codex {self.current_label}",
+                "detail": self.current_detail,
+                "animation": self.current_animation,
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "freshness": freshness,
+                "activeSessions": self.active_sessions,
+                "events": self.events_log[:5],
+            }
 
 
 class MonitorState:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, codex_monitor: CodexSessionMonitor):
         self.root = root
         self.status_path = root / "codex-status.json"
+        self.codex_monitor = codex_monitor
 
     def read(self):
+        # Get real-time status from CodexSessionMonitor
+        live_status = self.codex_monitor.get_status()
+        has_live = self.codex_monitor.active_sessions > 0 or bool(
+            self.codex_monitor.trackers
+        )
+
+        # Read manual/fallback JSON
+        manual_data = self._read_manual_json()
+
+        if has_live:
+            # Merge: use live state but keep manual quotas if no live quota source
+            result = {**live_status}
+            # Quotas from manual JSON with source annotation
+            result["quotas"] = self._annotate_quotas(
+                manual_data.get("quotas", []), "manual"
+            )
+            # Keep legacy fields for backward compat
+            result["title"] = live_status["statusLabel"]
+            result["task"] = live_status["headline"]
+            result["log"] = [
+                {"time": e["time"], "text": e["text"]}
+                for e in live_status.get("events", [])
+            ]
+        else:
+            # Fallback to manual JSON entirely
+            result = manual_data.copy()
+            result["quotas"] = self._annotate_quotas(
+                manual_data.get("quotas", []), "manual"
+            )
+            # Add new fields with fallback values
+            status = manual_data.get("status", "idle")
+            animation = self._status_to_animation(status)
+            label = STATE_LABEL_MAP.get(status, status)
+            result["statusLabel"] = label
+            result["headline"] = manual_data.get("task", f"Codex {label}")
+            result["detail"] = ""
+            result["animation"] = animation
+            result["updatedAt"] = manual_data.get(
+                "updatedAt", datetime.now(timezone.utc).isoformat()
+            )
+            result["freshness"] = self._compute_freshness(
+                manual_data.get("updatedAt")
+            )
+            result["activeSessions"] = 0
+            result["events"] = manual_data.get("log", [])[:5]
+            # Keep legacy fields
+            result.setdefault("title", label)
+            result.setdefault("task", "")
+            result.setdefault("log", [])
+
+        return result
+
+    def _read_manual_json(self):
         if self.status_path.exists():
-            with self.status_path.open("r", encoding="utf-8-sig") as handle:
-                return json.load(handle)
+            try:
+                with self.status_path.open("r", encoding="utf-8-sig") as handle:
+                    return json.load(handle)
+            except (json.JSONDecodeError, OSError):
+                pass
         return {
-            "status": "working",
-            "title": "Working",
-            "task": "Codex is working",
-            "turn": "Current thread",
+            "status": "idle",
+            "title": "空闲",
+            "task": "",
             "quotas": [
                 {
                     "id": "five_hour",
-                    "label": "5-hour limit",
+                    "label": "5 小时限额",
                     "used": 0,
                     "limit": 100,
-                    "unit": "messages",
+                    "unit": "%",
                     "resetAt": "",
                 },
                 {
                     "id": "weekly",
-                    "label": "Weekly limit",
+                    "label": "周限额",
                     "used": 0,
-                    "limit": 500,
-                    "unit": "messages",
+                    "limit": 100,
+                    "unit": "%",
                     "resetAt": "",
                 },
             ],
         }
+
+    def _annotate_quotas(self, quotas, source):
+        """Add quotaSource and quotaUpdatedAt to each quota entry."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        annotated = []
+        for q in quotas:
+            entry = dict(q)
+            if "quotaSource" not in entry:
+                entry["quotaSource"] = source
+            if "quotaUpdatedAt" not in entry:
+                entry["quotaUpdatedAt"] = now_iso
+            annotated.append(entry)
+        return annotated
+
+    def _status_to_animation(self, status):
+        mapping = {
+            "thinking": "thinking",
+            "working": "typing",
+            "testing": "building",
+            "blocked": "error",
+            "done": "happy",
+            "idle": "idle",
+        }
+        return mapping.get(status, "idle")
+
+    def _compute_freshness(self, updated_at_str):
+        if not updated_at_str:
+            return "未知"
+        try:
+            updated = datetime.fromisoformat(updated_at_str)
+            now = datetime.now(timezone.utc)
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            elapsed = (now - updated).total_seconds()
+            if elapsed < 5:
+                return "刚刚"
+            elif elapsed < 60:
+                return f"{int(elapsed)}秒前"
+            elif elapsed < 3600:
+                return f"{int(elapsed // 60)}分钟前"
+            else:
+                return f"{int(elapsed // 3600)}小时前"
+        except (ValueError, TypeError):
+            return "未知"
 
 
 def local_ipv4_addresses():
@@ -74,7 +521,7 @@ def local_ipv4_addresses():
 
 def make_handler(root: Path, state: MonitorState, http_port: int):
     class Handler(SimpleHTTPRequestHandler):
-        server_version = "CodexMonitor/1.0"
+        server_version = "CodexMonitor/2.0"
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(root), **kwargs)
@@ -151,7 +598,13 @@ def main():
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    state = MonitorState(root)
+
+    # Start Codex session monitor
+    codex_monitor = CodexSessionMonitor()
+    codex_monitor.start()
+    print("CodexSessionMonitor started — watching ~/.codex/sessions/")
+
+    state = MonitorState(root, codex_monitor)
     handler = make_handler(root, state, args.port)
     server = ThreadingHTTPServer((args.host, args.port), handler)
 
@@ -162,7 +615,7 @@ def main():
     )
     thread.start()
 
-    print("Codex Monitor server is running")
+    print("Codex Monitor server is running (v2.0)")
     print(f"Local: http://127.0.0.1:{args.port}/")
     for ip in local_ipv4_addresses():
         print(f"LAN:   http://{ip}:{args.port}/")

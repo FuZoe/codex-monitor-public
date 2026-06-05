@@ -68,3 +68,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-codex-mobile
 ```
 
 The APK is written to `dist/codex-monitor-android.apk`.
+
+## Real-Time Status (v2.0)
+
+The desktop server now includes a `CodexSessionMonitor` that watches
+`~/.codex/sessions/` for JSONL rollout files and maps events to states
+in real time. The phone receives:
+
+- `animation` — which character GIF to show (thinking, typing, building, etc.)
+- `statusLabel` — Chinese short status phrase
+- `headline` / `detail` — description of what's happening
+- `freshness` — human-readable time since last update
+- `quotaSource` — whether quota data is `live`, `manual`, or `stale`
+
+If no Codex sessions are active, the server falls back to `codex-status.json`.
+
+## Disclaimer
+
+This project is **not** an official OpenAI or Codex product. It is a personal
+tool for monitoring local Codex CLI sessions.
+
+If the Clawd animation assets are enabled (in `android/assets/clawd/`), they
+are sourced from [clawd-on-desk](https://github.com/moeloubani/clawd-on-desk)
+under the MIT License. See [NOTICE.md](NOTICE.md) for attribution details.

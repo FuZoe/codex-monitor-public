@@ -15,6 +15,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -47,17 +49,31 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private String baseUrl = "";
     private boolean discovering = false;
+    private boolean disconnected = false;
+    private long lastSuccessTime = 0;
 
+    private WebView characterView;
     private TextView connectionText;
-    private TextView titleText;
-    private TextView taskText;
+    private TextView statusLabelText;
+    private TextView headlineText;
+    private TextView freshnessText;
     private TextView fiveHourQuotaText;
     private TextView fiveHourDetailText;
+    private TextView fiveHourSourceText;
     private TextView weeklyQuotaText;
     private TextView weeklyDetailText;
+    private TextView weeklySourceText;
     private TextView logText;
     private RingView fiveHourRingView;
     private RingView weeklyRingView;
+
+    // Saved last successful data for disconnect resilience
+    private String lastFiveHourPercent = "--%";
+    private String lastFiveHourDetail = "\u5269\u4f59 --";
+    private String lastWeeklyPercent = "--%";
+    private String lastWeeklyDetail = "\u5269\u4f59 --";
+    private int lastFiveHourRing = 0;
+    private int lastWeeklyRing = 0;
 
     private final Runnable pollRunnable = new Runnable() {
         @Override
@@ -104,21 +120,41 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
         scroll.addView(root, new ScrollView.LayoutParams(-1, -2));
 
-        TextView appTitle = text("Codex Monitor", 34, Color.WHITE, true);
-        root.addView(appTitle);
+        // --- Character Animation WebView (top ~40% of screen) ---
+        characterView = new WebView(this);
+        characterView.setBackgroundColor(Color.TRANSPARENT);
+        WebSettings ws = characterView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setAllowFileAccess(true);
+        ws.setUseWideViewPort(true);
+        ws.setLoadWithOverviewMode(true);
+        characterView.loadUrl("file:///android_asset/status-character.html");
 
-        connectionText = text("\u5bfb\u627e\u7535\u8111\u7aef\u670d\u52a1...", 14, Color.rgb(148, 163, 184), false);
-        connectionText.setPadding(0, dp(8), 0, dp(18));
-        root.addView(connectionText);
+        // Height: roughly 40% of screen
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int animHeight = (int) (screenHeight * 0.38);
+        LinearLayout.LayoutParams animParams = new LinearLayout.LayoutParams(-1, animHeight);
+        animParams.setMargins(0, 0, 0, dp(12));
+        root.addView(characterView, animParams);
 
-        titleText = text("\u540c\u6b65\u4e2d", 54, Color.WHITE, true);
-        titleText.setSingleLine(false);
-        root.addView(titleText);
+        // --- Status label (large) ---
+        statusLabelText = text("\u7a7a\u95f2", 38, Color.WHITE, true);
+        statusLabelText.setGravity(Gravity.CENTER);
+        root.addView(statusLabelText);
 
-        taskText = text("\u7b49\u5f85\u72b6\u6001...", 19, Color.rgb(215, 225, 238), false);
-        taskText.setPadding(0, dp(8), 0, dp(18));
-        root.addView(taskText);
+        // --- Headline ---
+        headlineText = text("", 16, Color.rgb(215, 225, 238), false);
+        headlineText.setGravity(Gravity.CENTER);
+        headlineText.setPadding(0, dp(4), 0, dp(4));
+        root.addView(headlineText);
 
+        // --- Freshness ---
+        freshnessText = text("", 13, Color.rgb(148, 163, 184), false);
+        freshnessText.setGravity(Gravity.CENTER);
+        freshnessText.setPadding(0, 0, 0, dp(14));
+        root.addView(freshnessText);
+
+        // --- Quota section ---
         TextView quotaTitle = text("\u989d\u5ea6", 18, Color.rgb(148, 163, 184), true);
         quotaTitle.setPadding(0, 0, 0, dp(8));
         root.addView(quotaTitle);
@@ -126,13 +162,16 @@ public class MainActivity extends Activity {
         fiveHourRingView = new RingView(this);
         fiveHourQuotaText = text("--%", 34, Color.WHITE, true);
         fiveHourDetailText = text("\u5269\u4f59 --", 14, Color.rgb(148, 163, 184), false);
-        root.addView(quotaBlock("\u0035 \u5c0f\u65f6\u9650\u989d", fiveHourRingView, fiveHourQuotaText, fiveHourDetailText));
+        fiveHourSourceText = text("", 12, Color.rgb(120, 120, 140), false);
+        root.addView(quotaBlock("5 \u5c0f\u65f6\u9650\u989d", fiveHourRingView, fiveHourQuotaText, fiveHourDetailText, fiveHourSourceText));
 
         weeklyRingView = new RingView(this);
         weeklyQuotaText = text("--%", 34, Color.WHITE, true);
         weeklyDetailText = text("\u5269\u4f59 --", 14, Color.rgb(148, 163, 184), false);
-        root.addView(quotaBlock("\u5468\u9650\u989d", weeklyRingView, weeklyQuotaText, weeklyDetailText));
+        weeklySourceText = text("", 12, Color.rgb(120, 120, 140), false);
+        root.addView(quotaBlock("\u5468\u9650\u989d", weeklyRingView, weeklyQuotaText, weeklyDetailText, weeklySourceText));
 
+        // --- Rescan button ---
         Button rescan = new Button(this);
         rescan.setText("\u91cd\u65b0\u641c\u7d22\u7535\u8111");
         rescan.setTextColor(Color.rgb(7, 16, 12));
@@ -144,16 +183,25 @@ public class MainActivity extends Activity {
                 discoverServer();
             }
         });
-        root.addView(rescan, new LinearLayout.LayoutParams(-1, dp(48)));
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-1, dp(48));
+        btnParams.setMargins(0, dp(12), 0, 0);
+        root.addView(rescan, btnParams);
 
-        logText = text("", 14, Color.rgb(215, 225, 238), false);
-        logText.setPadding(0, dp(18), 0, 0);
+        // --- Connection info (bottom) ---
+        connectionText = text("\u5bfb\u627e\u7535\u8111\u7aef\u670d\u52a1...", 13, Color.rgb(148, 163, 184), false);
+        connectionText.setPadding(0, dp(12), 0, 0);
+        connectionText.setGravity(Gravity.CENTER);
+        root.addView(connectionText);
+
+        // --- Event log ---
+        logText = text("", 13, Color.rgb(180, 190, 200), false);
+        logText.setPadding(0, dp(10), 0, 0);
         root.addView(logText);
 
         setContentView(scroll);
     }
 
-    private LinearLayout quotaBlock(String label, RingView ring, TextView percent, TextView detail) {
+    private LinearLayout quotaBlock(String label, RingView ring, TextView percent, TextView detail, TextView source) {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.HORIZONTAL);
         block.setGravity(Gravity.CENTER_VERTICAL);
@@ -164,18 +212,20 @@ public class MainActivity extends Activity {
         blockParams.setMargins(0, 0, 0, dp(10));
         block.setLayoutParams(blockParams);
 
-        LinearLayout.LayoutParams ringParams = new LinearLayout.LayoutParams(dp(92), dp(92));
+        LinearLayout.LayoutParams ringParams = new LinearLayout.LayoutParams(dp(80), dp(80));
         ringParams.setMargins(0, 0, dp(14), 0);
         block.addView(ring, ringParams);
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
-        TextView labelView = text(label, 16, Color.rgb(215, 225, 238), true);
+        TextView labelView = text(label, 15, Color.rgb(215, 225, 238), true);
         texts.addView(labelView);
         percent.setPadding(0, dp(2), 0, 0);
         texts.addView(percent);
         detail.setPadding(0, dp(2), 0, 0);
         texts.addView(detail);
+        source.setPadding(0, dp(2), 0, 0);
+        texts.addView(source);
         block.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
         return block;
     }
@@ -209,10 +259,10 @@ public class MainActivity extends Activity {
                 }
                 DatagramSocket socket = new DatagramSocket();
                 socket.setBroadcast(true);
-                socket.setSoTimeout(1000);
+                socket.setSoTimeout(1500);
                 byte[] message = DISCOVERY_MESSAGE.getBytes(StandardCharsets.UTF_8);
                 InetAddress broadcast = InetAddress.getByName("255.255.255.255");
-                for (int attempt = 0; attempt < 5; attempt++) {
+                for (int attempt = 0; attempt < 8; attempt++) {
                     DatagramPacket packet = new DatagramPacket(message, message.length, broadcast, DISCOVERY_PORT);
                     socket.send(packet);
                     try {
@@ -230,6 +280,7 @@ public class MainActivity extends Activity {
                             setConnection("\u5df2\u8fde\u63a5 " + found);
                             socket.close();
                             discovering = false;
+                            disconnected = false;
                             pollStatus();
                             return;
                         }
@@ -258,19 +309,52 @@ public class MainActivity extends Activity {
             public void run() {
             try {
                 JSONObject json = fetchJson(baseUrl + "/api/status");
+                disconnected = false;
+                lastSuccessTime = System.currentTimeMillis();
                 renderStatus(json);
             } catch (Exception ex) {
-                setConnection("\u8fde\u63a5\u4e2d\u65ad\uff0c\u6b63\u5728\u91cd\u65b0\u641c\u7d22...");
-                discoverServer();
+                handleDisconnect();
             }
             }
         });
     }
 
+    private void handleDisconnect() {
+        if (!disconnected) {
+            disconnected = true;
+            ui.post(new Runnable() {
+                @Override
+                public void run() {
+                    // Switch animation to sleeping
+                    setCharacterState("sleeping");
+                    statusLabelText.setText("\u65ad\u5f00\u8fde\u63a5");
+                    headlineText.setText("\u4fdd\u7559\u6700\u540e\u6570\u636e\uff0c\u6b63\u5728\u91cd\u8fde...");
+                    // Keep last quota data (don't zero out)
+                    fiveHourQuotaText.setText(lastFiveHourPercent);
+                    fiveHourDetailText.setText(lastFiveHourDetail);
+                    fiveHourRingView.setPercent(lastFiveHourRing);
+                    weeklyQuotaText.setText(lastWeeklyPercent);
+                    weeklyDetailText.setText(lastWeeklyDetail);
+                    weeklyRingView.setPercent(lastWeeklyRing);
+                }
+            });
+        }
+        // Update freshness to show how long disconnected
+        long elapsed = (System.currentTimeMillis() - lastSuccessTime) / 1000;
+        String disconnectTime;
+        if (elapsed < 60) {
+            disconnectTime = elapsed + "\u79d2\u524d\u65ad\u5f00";
+        } else {
+            disconnectTime = (elapsed / 60) + "\u5206\u949f\u524d\u65ad\u5f00";
+        }
+        setConnection("\u8fde\u63a5\u4e2d\u65ad \u2014 " + disconnectTime);
+        discoverServer();
+    }
+
     private JSONObject fetchJson(String url) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setConnectTimeout(1500);
-        connection.setReadTimeout(1500);
+        connection.setConnectTimeout(2000);
+        connection.setReadTimeout(2000);
         connection.setRequestMethod("GET");
         try (InputStream stream = connection.getInputStream();
              BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
@@ -286,45 +370,126 @@ public class MainActivity extends Activity {
     }
 
     private void renderStatus(JSONObject json) {
-        JSONObject fiveHour = quotaFor(json, "five_hour", 0, 100, "messages");
-        JSONObject weekly = quotaFor(json, "weekly", 0, 500, "messages");
+        // Parse new v2 fields (with fallback to legacy)
+        String animation = json.optString("animation", "");
+        String statusLabel = json.optString("statusLabel", "");
+        String headline = json.optString("headline", "");
+        String freshness = json.optString("freshness", "");
+
+        // Legacy fallback
+        if (TextUtils.isEmpty(statusLabel)) {
+            statusLabel = json.optString("title", json.optString("status", "Working"));
+        }
+        if (TextUtils.isEmpty(headline)) {
+            headline = json.optString("task", "");
+        }
+        if (TextUtils.isEmpty(animation)) {
+            animation = mapLegacyStatus(json.optString("status", "idle"));
+        }
+
+        // Quotas
+        JSONObject fiveHour = quotaFor(json, "five_hour", 0, 100, "%");
+        JSONObject weekly = quotaFor(json, "weekly", 0, 100, "%");
+
         int fiveHourUsed = fiveHour.optInt("used", 0);
         int fiveHourLimit = Math.max(1, fiveHour.optInt("limit", 100));
         int fiveHourRemaining = Math.max(0, fiveHourLimit - fiveHourUsed);
         int fiveHourPercent = Math.round((fiveHourRemaining * 100f) / fiveHourLimit);
-        String fiveHourUnit = fiveHour.optString("unit", "messages");
+        String fiveHourUnit = fiveHour.optString("unit", "%");
+        String fiveHourSource = fiveHour.optString("quotaSource", "unknown");
+
         int weeklyUsed = weekly.optInt("used", 0);
-        int weeklyLimit = Math.max(1, weekly.optInt("limit", 500));
+        int weeklyLimit = Math.max(1, weekly.optInt("limit", 100));
         int weeklyRemaining = Math.max(0, weeklyLimit - weeklyUsed);
         int weeklyPercent = Math.round((weeklyRemaining * 100f) / weeklyLimit);
-        String weeklyUnit = weekly.optString("unit", "messages");
-        String title = json.optString("title", json.optString("status", "Working"));
-        String task = json.optString("task", "");
-        JSONArray log = json.optJSONArray("log");
+        String weeklyUnit = weekly.optString("unit", "%");
+        String weeklySource = weekly.optString("quotaSource", "unknown");
+
+        // Events log
+        JSONArray events = json.optJSONArray("events");
+        if (events == null) {
+            events = json.optJSONArray("log");
+        }
         StringBuilder logs = new StringBuilder();
-        if (log != null) {
-            for (int i = 0; i < Math.min(5, log.length()); i++) {
-                JSONObject item = log.optJSONObject(i);
+        if (events != null) {
+            for (int i = 0; i < Math.min(5, events.length()); i++) {
+                JSONObject item = events.optJSONObject(i);
                 if (item != null) {
                     logs.append("\u2022 ").append(item.optString("text", "")).append("\n");
                 }
             }
         }
+
+        // Save for disconnect resilience
+        lastFiveHourPercent = String.format(Locale.US, "%d%%", fiveHourPercent);
+        lastFiveHourDetail = "\u5269\u4f59 " + fiveHourRemaining + " " + fiveHourUnit + " / \u4e0a\u9650 " + fiveHourLimit;
+        lastFiveHourRing = fiveHourPercent;
+        lastWeeklyPercent = String.format(Locale.US, "%d%%", weeklyPercent);
+        lastWeeklyDetail = "\u5269\u4f59 " + weeklyRemaining + " " + weeklyUnit + " / \u4e0a\u9650 " + weeklyLimit;
+        lastWeeklyRing = weeklyPercent;
+
+        // Format source labels
+        String fiveHourSourceLabel = formatSourceLabel(fiveHourSource);
+        String weeklySourceLabel = formatSourceLabel(weeklySource);
+
+        final String fAnimation = animation;
+        final String fStatusLabel = statusLabel;
+        final String fHeadline = headline;
+        final String fFreshness = freshness;
+        final String fLogs = logs.toString();
+        final String fFiveHourSourceLabel = fiveHourSourceLabel;
+        final String fWeeklySourceLabel = weeklySourceLabel;
+
         ui.post(new Runnable() {
             @Override
             public void run() {
-            setConnection("\u5df2\u8fde\u63a5 " + baseUrl);
-            titleText.setText(title);
-            taskText.setText(task);
-            fiveHourQuotaText.setText(String.format(Locale.US, "%d%%", fiveHourPercent));
-            fiveHourDetailText.setText("\u5269\u4f59 " + fiveHourRemaining + " " + fiveHourUnit + " / \u4e0a\u9650 " + fiveHourLimit);
-            fiveHourRingView.setPercent(fiveHourPercent);
-            weeklyQuotaText.setText(String.format(Locale.US, "%d%%", weeklyPercent));
-            weeklyDetailText.setText("\u5269\u4f59 " + weeklyRemaining + " " + weeklyUnit + " / \u4e0a\u9650 " + weeklyLimit);
-            weeklyRingView.setPercent(weeklyPercent);
-            logText.setText(logs.toString());
+                setConnection("\u5df2\u8fde\u63a5 " + baseUrl);
+                setCharacterState(fAnimation);
+                statusLabelText.setText(fStatusLabel);
+                headlineText.setText(fHeadline);
+                freshnessText.setText(fFreshness);
+
+                fiveHourQuotaText.setText(lastFiveHourPercent);
+                fiveHourDetailText.setText(lastFiveHourDetail);
+                fiveHourRingView.setPercent(lastFiveHourRing);
+                fiveHourSourceText.setText(fFiveHourSourceLabel);
+
+                weeklyQuotaText.setText(lastWeeklyPercent);
+                weeklyDetailText.setText(lastWeeklyDetail);
+                weeklyRingView.setPercent(lastWeeklyRing);
+                weeklySourceText.setText(fWeeklySourceLabel);
+
+                logText.setText(fLogs);
             }
         });
+    }
+
+    private String formatSourceLabel(String source) {
+        if ("live".equals(source)) {
+            return "\u2705 \u5b9e\u65f6\u6570\u636e";
+        } else if ("manual".equals(source)) {
+            return "\u26a0\ufe0f \u624b\u52a8\u6570\u636e\uff0c\u989d\u5ea6\u672a\u5b9e\u65f6\u5237\u65b0";
+        } else if ("stale".equals(source)) {
+            return "\u26a0\ufe0f \u6570\u636e\u53ef\u80fd\u8fc7\u671f";
+        } else {
+            return "\u26a0\ufe0f \u989d\u5ea6\u672a\u5b9e\u65f6\u5237\u65b0";
+        }
+    }
+
+    private String mapLegacyStatus(String status) {
+        if ("thinking".equals(status)) return "thinking";
+        if ("working".equals(status)) return "typing";
+        if ("testing".equals(status)) return "building";
+        if ("blocked".equals(status)) return "error";
+        if ("done".equals(status)) return "happy";
+        return "idle";
+    }
+
+    private void setCharacterState(String state) {
+        if (characterView != null && !TextUtils.isEmpty(state)) {
+            String escaped = state.replace("\\", "\\\\").replace("'", "\\'");
+            characterView.evaluateJavascript("setCodexState('" + escaped + "')", null);
+        }
     }
 
     private JSONObject quotaFor(JSONObject json, String id, int fallbackUsed, int fallbackLimit, String fallbackUnit) {

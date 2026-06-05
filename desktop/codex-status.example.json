@@ -10,7 +10,9 @@
       "used": 58,
       "limit": 100,
       "unit": "%",
-      "resetAt": ""
+      "resetAt": "",
+      "quotaSource": "manual",
+      "quotaUpdatedAt": "2026-06-05T23:02:00+08:00"
     },
     {
       "id": "weekly",
@@ -18,7 +20,9 @@
       "used": 16,
       "limit": 100,
       "unit": "%",
-      "resetAt": ""
+      "resetAt": "",
+      "quotaSource": "manual",
+      "quotaUpdatedAt": "2026-06-05T23:02:00+08:00"
     }
   ],
   "updatedAt": "2026-06-05T23:02:00+08:00",

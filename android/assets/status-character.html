@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#character {
+  max-width: 80%;
+  max-height: 90%;
+  object-fit: contain;
+  transition: opacity 0.3s ease;
+}
+#character.switching {
+  opacity: 0.3;
+}
+#fallback {
+  display: none;
+  color: #94a3b8;
+  font-size: 16px;
+  text-align: center;
+  font-family: sans-serif;
+}
+</style>
+</head>
+<body>
+<img id="character" src="clawd/gif/clawd-idle.gif" alt="Codex Status">
+<div id="fallback"></div>
+<script>
+var img = document.getElementById('character');
+var fallback = document.getElementById('fallback');
+var currentState = 'idle';
+
+var stateToGif = {
+  'thinking': 'clawd/gif/clawd-thinking.gif',
+  'typing': 'clawd/gif/clawd-typing.gif',
+  'working': 'clawd/gif/clawd-typing.gif',
+  'building': 'clawd/gif/clawd-building.gif',
+  'tool_call': 'clawd/gif/clawd-building.gif',
+  'juggling': 'clawd/gif/clawd-juggling.gif',
+  'multi_session': 'clawd/gif/clawd-juggling.gif',
+  'sweeping': 'clawd/gif/clawd-sweeping.gif',
+  'compacting': 'clawd/gif/clawd-sweeping.gif',
+  'happy': 'clawd/gif/clawd-happy.gif',
+  'attention': 'clawd/gif/clawd-happy.gif',
+  'done': 'clawd/gif/clawd-happy.gif',
+  'error': 'clawd/gif/clawd-error.gif',
+  'idle': 'clawd/gif/clawd-idle.gif',
+  'sleeping': 'clawd/gif/clawd-sleeping.gif',
+  'disconnected': 'clawd/gif/clawd-sleeping.gif',
+  'notification': 'clawd/gif/clawd-notification.gif'
+};
+
+function setCodexState(state) {
+  if (state === currentState) return;
+  currentState = state;
+  var gif = stateToGif[state];
+  if (!gif) {
+    gif = stateToGif['idle'];
+  }
+  img.classList.add('switching');
+  setTimeout(function() {
+    img.src = gif;
+    img.onerror = function() {
+      img.style.display = 'none';
+      fallback.style.display = 'block';
+      fallback.textContent = state;
+    };
+    img.onload = function() {
+      img.style.display = 'block';
+      fallback.style.display = 'none';
+    };
+    img.classList.remove('switching');
+  }, 150);
+}
+
+// Show fallback text if no GIF available on initial load
+img.onerror = function() {
+  img.style.display = 'none';
+  fallback.style.display = 'block';
+  fallback.textContent = '\u7b49\u5f85\u52a8\u753b\u8d44\u6e90...';
+};
+</script>
+</body>
+</html>

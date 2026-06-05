@@ -69,6 +69,8 @@ $state = [ordered]@{
       limit = $FiveHourLimit
       unit = $Unit
       resetAt = ""
+      quotaSource = "manual"
+      quotaUpdatedAt = $now
     },
     [ordered]@{
       id = "weekly"
@@ -77,6 +79,8 @@ $state = [ordered]@{
       limit = $WeeklyLimit
       unit = $Unit
       resetAt = ""
+      quotaSource = "manual"
+      quotaUpdatedAt = $now
     }
   );
   updatedAt = $now
