@@ -16,94 +16,68 @@ html, body {
   font-family: system-ui, sans-serif;
 }
 .stage {
-  position: relative;
-  width: min(58vw, 210px);
-  height: min(58vw, 210px);
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
-.orb {
-  width: 54%;
-  height: 54%;
-  border-radius: 50%;
-  background: #38d996;
-  box-shadow: 0 0 34px rgba(56, 217, 150, 0.42);
-  animation: breathe 2.4s ease-in-out infinite;
+#character {
+  max-width: 86%;
+  max-height: 92%;
+  object-fit: contain;
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
-.ring {
-  position: absolute;
-  inset: 11%;
-  border: 10px solid rgba(148, 163, 184, 0.18);
-  border-top-color: #38d996;
-  border-radius: 50%;
-  animation: spin 1.6s linear infinite;
+#character.switching {
+  opacity: 0.25;
+  transform: scale(0.96);
 }
-.dot {
-  position: absolute;
-  width: 13%;
-  height: 13%;
-  border-radius: 50%;
-  background: #e5eefb;
-  box-shadow: 0 0 18px rgba(229, 238, 251, 0.38);
-  transform: translateY(-86px);
-  animation: orbit 2.2s linear infinite;
-}
-.label {
-  position: absolute;
-  bottom: 5%;
+#fallback {
+  display: none;
   color: #d7e1ee;
-  font-size: 15px;
-  letter-spacing: 0;
-}
-body.idle .ring,
-body.sleeping .ring { animation-duration: 4s; border-top-color: #94a3b8; }
-body.idle .orb { background: #64748b; box-shadow: 0 0 22px rgba(100, 116, 139, 0.28); }
-body.sleeping .orb { background: #334155; box-shadow: none; animation-duration: 4s; }
-body.thinking .orb { background: #60a5fa; box-shadow: 0 0 34px rgba(96, 165, 250, 0.4); }
-body.typing .orb,
-body.working .orb { background: #38d996; }
-body.juggling .orb { background: #f59e0b; box-shadow: 0 0 34px rgba(245, 158, 11, 0.4); }
-body.happy .orb,
-body.attention .orb,
-body.done .orb { background: #facc15; box-shadow: 0 0 36px rgba(250, 204, 21, 0.42); animation-name: pop; }
-body.sweeping .orb,
-body.compacting .orb { background: #a78bfa; box-shadow: 0 0 34px rgba(167, 139, 250, 0.4); }
-body.error .orb { background: #fb7185; box-shadow: 0 0 34px rgba(251, 113, 133, 0.42); }
-body.notification .orb { background: #22d3ee; box-shadow: 0 0 34px rgba(34, 211, 238, 0.4); }
-body.sleeping .dot,
-body.idle .dot { opacity: 0.35; animation-duration: 4s; }
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-@keyframes orbit {
-  to { transform: rotate(360deg) translateY(-86px); }
-}
-@keyframes breathe {
-  0%, 100% { transform: scale(0.94); }
-  50% { transform: scale(1.06); }
-}
-@keyframes pop {
-  0%, 100% { transform: scale(0.98); }
-  35% { transform: scale(1.12); }
-  70% { transform: scale(0.94); }
+  font-size: 18px;
+  text-align: center;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(21, 25, 31, 0.72);
 }
 </style>
 </head>
-<body class="idle">
+<body>
 <div class="stage">
-  <div class="ring"></div>
-  <div class="dot"></div>
-  <div class="orb"></div>
-  <div class="label" id="label">待机</div>
+  <img id="character" src="clawd/gif/clawd-idle.gif" alt="Codex Status">
+  <div id="fallback">待机</div>
 </div>
 <script>
-var label = document.getElementById('label');
-var labels = {
+var img = document.getElementById('character');
+var fallback = document.getElementById('fallback');
+var currentState = 'idle';
+
+var stateToGif = {
+  thinking: 'clawd/gif/clawd-thinking.gif',
+  typing: 'clawd/gif/clawd-typing.gif',
+  working: 'clawd/gif/clawd-typing.gif',
+  building: 'clawd/gif/clawd-building.gif',
+  tool_call: 'clawd/gif/clawd-building.gif',
+  juggling: 'clawd/gif/clawd-juggling.gif',
+  multi_session: 'clawd/gif/clawd-juggling.gif',
+  sweeping: 'clawd/gif/clawd-sweeping.gif',
+  compacting: 'clawd/gif/clawd-sweeping.gif',
+  happy: 'clawd/gif/clawd-happy.gif',
+  attention: 'clawd/gif/clawd-happy.gif',
+  done: 'clawd/gif/clawd-happy.gif',
+  error: 'clawd/gif/clawd-error.gif',
+  idle: 'clawd/gif/clawd-idle.gif',
+  sleeping: 'clawd/gif/clawd-sleeping.gif',
+  disconnected: 'clawd/gif/clawd-sleeping.gif',
+  notification: 'clawd/gif/clawd-notification.gif'
+};
+
+var stateLabels = {
   thinking: '思考中',
   typing: '写代码中',
-  working: '工作中',
+  working: '写代码中',
   building: '构建中',
   tool_call: '执行工具',
   juggling: '多任务',
@@ -116,17 +90,42 @@ var labels = {
   error: '出错',
   idle: '待机',
   sleeping: '休眠',
-  disconnected: '断开',
+  disconnected: '断开连接',
   notification: '通知'
 };
 
+function showFallback(state) {
+  img.style.display = 'none';
+  fallback.style.display = 'block';
+  fallback.textContent = stateLabels[state] || '待机';
+}
+
+function showImage() {
+  img.style.display = 'block';
+  fallback.style.display = 'none';
+}
+
 function setCodexState(state) {
-  if (!labels[state]) {
+  if (!stateToGif[state]) {
     state = 'idle';
   }
-  document.body.className = state;
-  label.textContent = labels[state];
+  if (state === currentState && img.style.display !== 'none') {
+    return;
+  }
+  currentState = state;
+  img.classList.add('switching');
+  setTimeout(function() {
+    img.onerror = function() { showFallback(state); };
+    img.onload = function() {
+      showImage();
+      img.classList.remove('switching');
+    };
+    img.src = stateToGif[state];
+  }, 100);
 }
+
+img.onerror = function() { showFallback(currentState); };
+img.onload = function() { showImage(); };
 </script>
 </body>
 </html>
