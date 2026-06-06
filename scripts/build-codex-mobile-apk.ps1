@@ -22,6 +22,7 @@ $build = Join-Path $root "build"
 $gen = Join-Path $build "gen"
 $classes = Join-Path $build "classes"
 $dex = Join-Path $build "dex"
+$assetZip = Join-Path $build "assetzip"
 $unsigned = Join-Path $build "codex-monitor-unsigned.apk"
 $aligned = Join-Path $build "codex-monitor-aligned.apk"
 $dist = Join-Path $repoRoot "dist"
@@ -52,7 +53,7 @@ Remove-Item -LiteralPath $build -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $gen, $classes, $dex, $dist | Out-Null
 
 Invoke-Checked $aapt2 @("compile", "--dir", (Join-Path $root "res"), "-o", (Join-Path $build "res.zip"))
-Invoke-Checked $aapt2 @("link", "-I", $androidJar, "--manifest", (Join-Path $root "AndroidManifest.xml"), "--java", $gen, "-A", (Join-Path $root "assets"), "-o", $unsigned, (Join-Path $build "res.zip"))
+Invoke-Checked $aapt2 @("link", "-I", $androidJar, "--manifest", (Join-Path $root "AndroidManifest.xml"), "--java", $gen, "-o", $unsigned, (Join-Path $build "res.zip"))
 
 $sources = @(
   (Join-Path $root "src\com\codexmonitor\MainActivity.java"),
@@ -69,6 +70,15 @@ Invoke-Checked $d8 (@("--release", "--min-api", "23", "--output", $dex) + $class
 jar uf $unsigned -C $dex classes.dex
 if ($LASTEXITCODE -ne 0) {
   throw "jar failed with exit code $LASTEXITCODE"
+}
+
+New-Item -ItemType Directory -Force -Path (Join-Path $assetZip "assets") | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $root "assets") | ForEach-Object {
+  Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $assetZip "assets") -Recurse -Force
+}
+jar uf $unsigned -C $assetZip assets
+if ($LASTEXITCODE -ne 0) {
+  throw "jar assets failed with exit code $LASTEXITCODE"
 }
 Invoke-Checked $zipalign @("-f", "4", $unsigned, $aligned)
 
