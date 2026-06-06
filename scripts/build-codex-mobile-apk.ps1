@@ -1,10 +1,20 @@
 param(
-  [string]$SdkRoot = "$env:LOCALAPPDATA\Android\Sdk",
+  [string]$SdkRoot = "",
   [string]$BuildTools = "35.0.1",
   [string]$Platform = "android-35"
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($SdkRoot -eq "") {
+  if ($env:ANDROID_HOME) {
+    $SdkRoot = $env:ANDROID_HOME
+  } elseif ($env:ANDROID_SDK_ROOT) {
+    $SdkRoot = $env:ANDROID_SDK_ROOT
+  } else {
+    $SdkRoot = "$env:LOCALAPPDATA\Android\Sdk"
+  }
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $root = Join-Path $repoRoot "android"
@@ -22,6 +32,9 @@ $d8 = Join-Path $SdkRoot "build-tools\$BuildTools\d8.bat"
 $zipalign = Join-Path $SdkRoot "build-tools\$BuildTools\zipalign.exe"
 $apksigner = Join-Path $SdkRoot "build-tools\$BuildTools\apksigner.bat"
 $keystore = Join-Path $build "debug.keystore"
+$keyAlias = "androiddebugkey"
+$keystorePassword = "android"
+$keyPassword = "android"
 
 function Invoke-Checked {
   param(
@@ -58,11 +71,26 @@ if ($LASTEXITCODE -ne 0) {
 }
 Invoke-Checked $zipalign @("-f", "4", $unsigned, $aligned)
 
-keytool -genkeypair -v -keystore $keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Codex Monitor,O=Codex,C=US" | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  throw "keytool failed with exit code $LASTEXITCODE"
+if ($env:ANDROID_KEYSTORE_BASE64) {
+  $keystore = Join-Path $build "release.keystore"
+  [System.IO.File]::WriteAllBytes(
+    $keystore,
+    [System.Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64)
+  )
+  $keyAlias = if ($env:ANDROID_KEY_ALIAS) { $env:ANDROID_KEY_ALIAS } else { "androidreleasekey" }
+  $keystorePassword = $env:ANDROID_KEYSTORE_PASSWORD
+  $keyPassword = if ($env:ANDROID_KEY_PASSWORD) { $env:ANDROID_KEY_PASSWORD } else { $keystorePassword }
+
+  if (-not $keystorePassword) {
+    throw "ANDROID_KEYSTORE_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set"
+  }
+} else {
+  keytool -genkeypair -v -keystore $keystore -storepass $keystorePassword -keypass $keyPassword -alias $keyAlias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Codex Monitor,O=Codex,C=US" | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "keytool failed with exit code $LASTEXITCODE"
+  }
 }
-Invoke-Checked $apksigner @("sign", "--ks", $keystore, "--ks-pass", "pass:android", "--key-pass", "pass:android", "--out", $apk, $aligned)
+Invoke-Checked $apksigner @("sign", "--ks", $keystore, "--ks-key-alias", $keyAlias, "--ks-pass", "pass:$keystorePassword", "--key-pass", "pass:$keyPassword", "--out", $apk, $aligned)
 Invoke-Checked $apksigner @("verify", $apk)
 
 Write-Host "Built $apk"
