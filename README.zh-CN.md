@@ -16,7 +16,7 @@
 desktop/           HTTP 状态 API + JSONL 实时监控服务
 android/           原生 Android 全屏客户端
 scripts/           Windows PowerShell 辅助脚本
-dist/              预构建 APK
+dist/              本地 APK 构建产物（不纳入 Git）
 .github/workflows/ GitHub Actions 自动构建 & Release
 ```
 
@@ -42,13 +42,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-codex-monito
 前往 [Releases](https://github.com/FuZoe/codex_monitor/releases) 页面，
 下载最新的 `codex-monitor-android.apk` 安装。
 
-#### 方式二：使用仓库内预构建 APK
+#### 方式二：本地构建后安装
 
 ```
 dist/codex-monitor-android.apk
 ```
 
-使用 `adb install` 或直接传到手机安装。
+运行下方构建脚本后，使用 `adb install` 或直接传到手机安装。
 
 ### 3. 连接
 
@@ -114,7 +114,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-codex-statu
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-codex-mobile-apk.ps1
 ```
 
-构建产物输出到 `dist/codex-monitor-android.apk`。
+构建产物输出到 `dist/codex-monitor-android.apk`。APK 属于 Release/本地构建产物，不纳入源码仓库版本控制。
 
 ## 第三方素材
 

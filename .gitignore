@@ -3,6 +3,7 @@ desktop/codex-status.json
 
 # Android build outputs
 android/build/
+dist/*.apk
 *.idsig
 *.keystore
 

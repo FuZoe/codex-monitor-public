@@ -11,7 +11,7 @@ Codex Monitor is a small desktop service plus a full-screen Android app for watc
 - `desktop/`: HTTP status API, web monitor, and state JSON location.
 - `android/`: native Android source.
 - `scripts/`: Windows helper scripts.
-- `dist/`: prebuilt Android APK.
+- `dist/`: local APK build output, ignored by Git.
 
 ## Start The Desktop Service
 
@@ -28,7 +28,10 @@ If Windows Firewall asks, allow Python on private networks.
 
 ## Install The Android App
 
-Install:
+Download the latest APK from the
+[Releases](https://github.com/FuZoe/codex_monitor/releases) page.
+
+If you build the APK locally, install:
 
 ```text
 dist/codex-monitor-android.apk
@@ -71,7 +74,8 @@ This project uses the installed Android SDK directly, without Gradle:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-codex-mobile-apk.ps1
 ```
 
-The APK is written to `dist/codex-monitor-android.apk`.
+The APK is written to `dist/codex-monitor-android.apk`. APK files are release
+artifacts and are not tracked in the source repository.
 
 ## Real-Time Status (v2.0)
 
