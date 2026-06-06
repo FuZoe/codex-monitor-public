@@ -20,12 +20,25 @@ EVENT_STATE_MAP = {
     "event_msg:task_started": "thinking",
     "event_msg:user_message": "thinking",
     "event_msg:agent_message": "working",
+    "event_msg:mcp_tool_call_end": "working",
+    "event_msg:patch_apply_end": "working",
+    "event_msg:web_search_end": "working",
     "response_item:function_call": "working",
+    "response_item:function_call_output": "working",
     "response_item:custom_tool_call": "working",
+    "response_item:custom_tool_call_output": "working",
     "response_item:web_search_call": "working",
+    "response_item:tool_search_call": "working",
+    "response_item:tool_search_output": "working",
+    "response.created": "thinking",
+    "response.output_item.added": "working",
+    "response.function_call_arguments.delta": "working",
+    "response.completed": "attention",
     "event_msg:task_complete": "attention",
     "event_msg:context_compacted": "sweeping",
+    "compacted": "sweeping",
     "event_msg:turn_aborted": "idle",
+    "error": "error",
 }
 
 # State priority (higher index = higher priority)
@@ -83,8 +96,9 @@ IDLE_DECAY_SECONDS = 300  # idle → sleeping after 5 min no event
 class CodexSessionTracker:
     """Tracks a single Codex rollout JSONL file."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, debug: bool = False):
         self.path = path
+        self.debug = debug
         self.offset = 0
         self.partial_line = ""
         self.session_id = path.stem  # rollout-XXXX
@@ -96,6 +110,8 @@ class CodexSessionTracker:
         self.last_state = "idle"
         self.last_event_text = ""
         self.cwd = ""
+        self.quotas = []
+        self.quota_updated_at = ""
 
     def read_new_events(self):
         """Read new lines from the JSONL file incrementally."""
@@ -138,57 +154,167 @@ class CodexSessionTracker:
     def process_events(self, events):
         """Process events and update state."""
         for event in events:
-            event_type = event.get("type", "")
-            payload = event.get("payload", {})
-            payload_type = payload.get("type", "") if isinstance(payload, dict) else ""
+            keys = self._extract_event_keys(event)
+            mapped = None
+            mapped_key = ""
+            for key in keys:
+                mapped = EVENT_STATE_MAP.get(key)
+                if mapped:
+                    mapped_key = key
+                    break
 
-            # Build event key like clawd-on-desk
-            if event_type and payload_type:
-                key = f"{event_type}:{payload_type}"
-            elif event_type:
-                key = event_type
-            else:
-                continue
+            if self.debug:
+                print(
+                    f"[JSONL] file={self.session_id} "
+                    f"keys={','.join(keys) or '<none>'} mapped={mapped or '-'}"
+                )
 
-            mapped = EVENT_STATE_MAP.get(key)
             if mapped:
                 self.last_state = mapped
                 # Use event timestamp if available, otherwise file-read time
                 event_ts = self._extract_timestamp(event)
                 self.last_event_at = event_ts if event_ts else time.time()
-                self.last_event_text = key
+                self.last_event_text = mapped_key
+
+            payload = event.get("payload", {})
 
             # Try to extract cwd
             if isinstance(payload, dict) and "cwd" in payload:
                 self.cwd = payload["cwd"]
+            self._extract_quota(event)
+
+    def _extract_event_keys(self, event):
+        """Extract possible mapping keys from known Codex JSONL event shapes."""
+        keys = []
+        event_type = event.get("type", "")
+        payload = event.get("payload", {})
+        payload_type = payload.get("type", "") if isinstance(payload, dict) else ""
+
+        if event_type and payload_type:
+            keys.append(f"{event_type}:{payload_type}")
+        if event_type:
+            keys.append(event_type)
+
+        event_name = event.get("event", "")
+        if event_name:
+            keys.append(event_name)
+
+        if isinstance(payload, str) and event_type:
+            keys.append(f"{event_type}:{payload}")
+
+        seen = set()
+        unique = []
+        for key in keys:
+            if key and key not in seen:
+                seen.add(key)
+                unique.append(key)
+        return unique
+
+    def _extract_event_key(self, event):
+        """Backward-compatible alias used by ad-hoc debug scripts."""
+        return self._extract_event_keys(event)
+
+    def _extract_quota(self, event):
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict) or payload.get("type") != "token_count":
+            return
+
+        rate_limits = payload.get("rate_limits")
+        if not isinstance(rate_limits, dict):
+            return
+
+        quotas = []
+        primary = rate_limits.get("primary")
+        if isinstance(primary, dict):
+            quotas.append(self._quota_from_rate_limit(
+                "five_hour",
+                "5 小时限额",
+                primary,
+            ))
+
+        secondary = rate_limits.get("secondary")
+        if isinstance(secondary, dict):
+            quotas.append(self._quota_from_rate_limit(
+                "weekly",
+                "周限额",
+                secondary,
+            ))
+
+        if quotas:
+            updated_at = self._extract_timestamp(event) or time.time()
+            updated_iso = datetime.fromtimestamp(
+                updated_at, tz=timezone.utc
+            ).isoformat()
+            for quota in quotas:
+                quota["quotaSource"] = "live-jsonl"
+                quota["quotaUpdatedAt"] = updated_iso
+                quota["planType"] = rate_limits.get("plan_type") or ""
+                quota["limitId"] = rate_limits.get("limit_id") or ""
+                quota["limitName"] = rate_limits.get("limit_name") or ""
+            self.quotas = quotas
+            self.quota_updated_at = updated_iso
+
+    @staticmethod
+    def _quota_from_rate_limit(quota_id, label, data):
+        used = data.get("used_percent", 0)
+        try:
+            used = float(used)
+        except (TypeError, ValueError):
+            used = 0.0
+        used = max(0.0, min(100.0, used))
+
+        resets_at = data.get("resets_at", "")
+        reset_at = ""
+        if isinstance(resets_at, (int, float)) and resets_at > 0:
+            reset_at = datetime.fromtimestamp(
+                float(resets_at), tz=timezone.utc
+            ).isoformat()
+
+        window_minutes = data.get("window_minutes", 0)
+        return {
+            "id": quota_id,
+            "label": label,
+            "used": round(used, 2),
+            "limit": 100,
+            "unit": "%",
+            "resetAt": reset_at,
+            "windowMinutes": window_minutes,
+        }
 
     @staticmethod
     def _extract_timestamp(event):
         """Try to extract a Unix timestamp from a JSONL event."""
         # Codex JSONL events may have a top-level "timestamp" or nested timestamp
         for field in ("timestamp", "ts", "time"):
-            val = event.get(field)
-            if isinstance(val, (int, float)) and val > 1_000_000_000:
-                return float(val)
-            if isinstance(val, str):
-                try:
-                    dt = datetime.fromisoformat(val)
-                    return dt.timestamp()
-                except (ValueError, TypeError):
-                    pass
+            parsed = CodexSessionTracker._parse_timestamp_value(event.get(field))
+            if parsed:
+                return parsed
         # Check payload.timestamp
         payload = event.get("payload", {})
         if isinstance(payload, dict):
             for field in ("timestamp", "ts", "time"):
-                val = payload.get(field)
-                if isinstance(val, (int, float)) and val > 1_000_000_000:
-                    return float(val)
-                if isinstance(val, str):
-                    try:
-                        dt = datetime.fromisoformat(val)
-                        return dt.timestamp()
-                    except (ValueError, TypeError):
-                        pass
+                parsed = CodexSessionTracker._parse_timestamp_value(
+                    payload.get(field)
+                )
+                if parsed:
+                    return parsed
+        return None
+
+    @staticmethod
+    def _parse_timestamp_value(value):
+        if isinstance(value, (int, float)) and value > 1_000_000_000:
+            return float(value)
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw.endswith("Z"):
+                raw = raw[:-1] + "+00:00"
+            try:
+                dt = datetime.fromisoformat(raw)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except (ValueError, TypeError):
+                return None
         return None
 
     def get_effective_state(self):
@@ -214,7 +340,8 @@ class CodexSessionTracker:
 class CodexSessionMonitor:
     """Monitors all active Codex sessions by scanning JSONL rollout files."""
 
-    def __init__(self):
+    def __init__(self, debug: bool = False):
+        self.debug = debug
         self.sessions_dir = Path.home() / ".codex" / "sessions"
         self.trackers: dict[str, CodexSessionTracker] = {}
         self.lock = threading.Lock()
@@ -228,6 +355,8 @@ class CodexSessionMonitor:
         self.active_sessions = 0
         self.last_update = time.time()
         self.events_log: list[dict] = []
+        self.latest_quotas = []
+        self.latest_quota_updated_at = ""
         # Min display state tracking
         self._forced_state = None
         self._forced_until = 0.0
@@ -273,7 +402,7 @@ class CodexSessionMonitor:
                     active_files.add(str(f))
                     key = str(f)
                     if key not in self.trackers:
-                        self.trackers[key] = CodexSessionTracker(f)
+                        self.trackers[key] = CodexSessionTracker(f, debug=self.debug)
             except OSError:
                 continue
 
@@ -283,6 +412,12 @@ class CodexSessionMonitor:
                 events = tracker.read_new_events()
                 if events:
                     tracker.process_events(events)
+                    if (
+                        tracker.quotas
+                        and tracker.quota_updated_at >= self.latest_quota_updated_at
+                    ):
+                        self.latest_quotas = [dict(q) for q in tracker.quotas]
+                        self.latest_quota_updated_at = tracker.quota_updated_at
 
             # Remove stale trackers (sleeping sessions aren't useful to keep)
             for key in list(self.trackers.keys()):
@@ -406,7 +541,27 @@ class CodexSessionMonitor:
                 "freshness": freshness,
                 "activeSessions": self.active_sessions,
                 "events": self.events_log[:5],
+                "quotas": self._get_latest_quotas(),
+                "quotaSource": self._get_quota_source(),
             }
+
+    def _get_latest_quotas(self):
+        latest_time = ""
+        latest_quotas = []
+        for tracker in self.trackers.values():
+            if tracker.quotas and tracker.quota_updated_at >= latest_time:
+                latest_time = tracker.quota_updated_at
+                latest_quotas = tracker.quotas
+        if not latest_quotas and self.latest_quotas:
+            latest_quotas = self.latest_quotas
+        return [dict(q) for q in latest_quotas]
+
+    def _get_quota_source(self):
+        if not self._get_latest_quotas():
+            return "unknown"
+        if self.active_sessions > 0:
+            return "live-jsonl"
+        return "stale-jsonl"
 
 
 class MonitorState:
@@ -428,10 +583,13 @@ class MonitorState:
         if has_live:
             # Merge: use live state but keep manual quotas if no live quota source
             result = {**live_status}
-            # Quotas from manual JSON with source annotation
-            result["quotas"] = self._annotate_quotas(
-                manual_data.get("quotas", []), "manual"
-            )
+            if live_status.get("quotas"):
+                result["quotaSource"] = live_status.get("quotaSource", "live-jsonl")
+            else:
+                result["quotas"] = self._annotate_quotas(
+                    manual_data.get("quotas", []), "manual"
+                )
+                result["quotaSource"] = "manual"
             # Keep legacy fields for backward compat
             result["title"] = live_status["statusLabel"]
             result["task"] = live_status["headline"]
@@ -442,9 +600,14 @@ class MonitorState:
         else:
             # Fallback to manual JSON entirely
             result = manual_data.copy()
-            result["quotas"] = self._annotate_quotas(
-                manual_data.get("quotas", []), "manual"
-            )
+            if live_status.get("quotas"):
+                result["quotas"] = live_status["quotas"]
+                result["quotaSource"] = live_status.get("quotaSource", "stale-jsonl")
+            else:
+                result["quotas"] = self._annotate_quotas(
+                    manual_data.get("quotas", []), "manual"
+                )
+                result["quotaSource"] = "manual"
             # Add new fields with fallback values
             status = manual_data.get("status", "idle")
             animation = self._status_to_animation(status)
@@ -644,12 +807,13 @@ def main():
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument("--discovery-port", type=int, default=45777)
     parser.add_argument("--root", default=os.path.dirname(__file__))
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
 
     # Start Codex session monitor
-    codex_monitor = CodexSessionMonitor()
+    codex_monitor = CodexSessionMonitor(debug=args.debug)
     codex_monitor.start()
     print("CodexSessionMonitor started — watching ~/.codex/sessions/")
 
