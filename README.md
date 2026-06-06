@@ -93,5 +93,5 @@ This project is **not** an official OpenAI or Codex product. It is a personal
 tool for monitoring local Codex CLI sessions.
 
 If the Clawd animation assets are enabled (in `android/assets/clawd/`), they
-are sourced from [clawd-on-desk](https://github.com/moeloubani/clawd-on-desk)
+are sourced from [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk)
 under the MIT License. See [NOTICE.md](NOTICE.md) for attribution details.

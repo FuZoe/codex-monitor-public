@@ -116,21 +116,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-codex-mobile
 
 构建产物输出到 `dist/codex-monitor-android.apk`。
 
-## GitHub Actions 自动构建
-
-仓库配置了 GitHub Actions 工作流（`.github/workflows/release-apk.yml`），
-在以下条件下自动构建并发布 APK：
-
-- 推送到 `main` 分支
-- 创建 `v*` 标签
-- 手动触发（可指定 Release 标签名）
-
-构建完成后会自动创建 GitHub Release 并上传 APK。
-
 ## 第三方素材
 
 手机端的 Clawd 角色动画 GIF（`android/assets/clawd/gif/`）来自
-[clawd-on-desk](https://github.com/moeloubani/clawd-on-desk) 项目，使用 MIT 许可证。
+[clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) 项目，使用 MIT 许可证。
 
 JSONL 事件到状态的映射逻辑参考了 `clawd-on-desk` 中的 `codex.js` 和 `codex-log-monitor.js`。
 
