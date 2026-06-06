@@ -465,11 +465,11 @@ public class MainActivity extends Activity {
     }
 
     private String formatSourceLabel(String source) {
-        if ("live".equals(source)) {
+        if ("live".equals(source) || "live-jsonl".equals(source)) {
             return "\u2705 \u5b9e\u65f6\u6570\u636e";
         } else if ("manual".equals(source)) {
             return "\u26a0\ufe0f \u624b\u52a8\u6570\u636e\uff0c\u989d\u5ea6\u672a\u5b9e\u65f6\u5237\u65b0";
-        } else if ("stale".equals(source)) {
+        } else if ("stale".equals(source) || "stale-jsonl".equals(source)) {
             return "\u26a0\ufe0f \u6570\u636e\u53ef\u80fd\u8fc7\u671f";
         } else {
             return "\u26a0\ufe0f \u989d\u5ea6\u672a\u5b9e\u65f6\u5237\u65b0";
