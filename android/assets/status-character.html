@@ -6,126 +6,468 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body {
-  width: 100%;
-  height: 100%;
+  width: 100%; height: 100%;
   background: transparent;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   font-family: system-ui, sans-serif;
 }
 .stage {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 302px; height: 300px;
   position: relative;
+  display: flex; align-items: center; justify-content: center;
 }
-#character {
-  max-width: 86%;
-  max-height: 92%;
-  object-fit: contain;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+
+/* ---- Robot SVG ---- */
+#robot-svg { width: 200px; height: 220px; overflow: visible; }
+
+/* ---- Base float ---- */
+@keyframes float { 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-6px); } }
+#robot-body-group { animation: float 3s ease-in-out infinite; }
+
+/* ---- Eye blink ---- */
+@keyframes blink {
+  0%,92%,100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.08); }
 }
-#character.switching {
-  opacity: 0.25;
-  transform: scale(0.96);
+.eye { transform-origin: center; animation: blink 4s ease-in-out infinite; }
+.eye-left  { animation-delay: 0s; }
+.eye-right { animation-delay: 0.1s; }
+
+/* ---- Antenna glow ---- */
+@keyframes antennaGlow {
+  0%,100% { opacity: 0.5; r: 5; }
+  50% { opacity: 1; r: 7; }
 }
+#antenna-light { animation: antennaGlow 2s ease-in-out infinite; }
+
+/* ---- Particles container ---- */
+#particles { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* ---- State-specific overrides ---- */
+
+/* THINKING: eyes look up, thought dots */
+.state-thinking .eye { animation: none; }
+.state-thinking .eye-left  { transform: translateY(-3px) translateX(1px); }
+.state-thinking .eye-right { transform: translateY(-3px) translateX(1px); }
+.state-thinking #robot-body-group { animation: thinkTilt 2s ease-in-out infinite; }
+@keyframes thinkTilt {
+  0%,100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(-4px) rotate(-3deg); }
+  70% { transform: translateY(-4px) rotate(3deg); }
+}
+
+/* TYPING: fast vibrate */
+.state-typing #robot-body-group { animation: typeVibe 0.12s linear infinite; }
+@keyframes typeVibe {
+  0%,100% { transform: translateX(0); }
+  25% { transform: translateX(-1px); }
+  75% { transform: translateX(1px); }
+}
+.state-typing .robot-arm-left  { animation: typeArmL 0.4s ease-in-out infinite; }
+.state-typing .robot-arm-right { animation: typeArmR 0.4s ease-in-out infinite 0.2s; }
+@keyframes typeArmL {
+  0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-8deg); }
+}
+@keyframes typeArmR {
+  0%,100% { transform: rotate(0deg); } 50% { transform: rotate(8deg); }
+}
+
+/* BUILDING: body sway + wrench arm */
+.state-building #robot-body-group { animation: buildBob 0.8s ease-in-out infinite; }
+@keyframes buildBob {
+  0%,100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(-2deg); }
+}
+.state-building .robot-arm-right { animation: hammerArm 0.6s ease-in-out infinite; transform-origin: 160px 120px; }
+@keyframes hammerArm {
+  0%,100% { transform: rotate(0deg); } 50% { transform: rotate(15deg); }
+}
+
+/* JUGGLING: bounce + wobble */
+.state-juggling #robot-body-group { animation: juggleBounce 0.6s ease-in-out infinite; }
+@keyframes juggleBounce {
+  0%,100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-8px) rotate(2deg); }
+  75% { transform: translateY(-4px) rotate(-2deg); }
+}
+
+/* SWEEPING: side-to-side */
+.state-sweeping #robot-body-group { animation: sweepMove 1.2s ease-in-out infinite; }
+@keyframes sweepMove {
+  0%,100% { transform: translateX(0) rotate(0deg); }
+  25% { transform: translateX(-8px) rotate(-3deg); }
+  75% { transform: translateX(8px) rotate(3deg); }
+}
+.state-sweeping .robot-arm-left { animation: sweepArm 1.2s ease-in-out infinite; transform-origin: 40px 120px; }
+@keyframes sweepArm {
+  0%,100% { transform: rotate(0deg); }
+  25% { transform: rotate(20deg); }
+  75% { transform: rotate(-20deg); }
+}
+
+/* HAPPY: big bounce + glow */
+.state-happy #robot-body-group { animation: happyBounce 0.5s ease-in-out infinite; }
+@keyframes happyBounce {
+  0%,100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-12px) scale(1.04); }
+}
+.state-happy .eye { animation: none; }
+.state-happy .eye-left, .state-happy .eye-right {
+  ry: 3; rx: 6;  /* squint-smile via CSS doesn't change SVG attrs, handled in JS */
+}
+.state-happy #antenna-light { fill: #4ade80; animation: antennaGlow 0.5s ease-in-out infinite; }
+
+/* ERROR: shake + red tint */
+.state-error #robot-body-group { animation: errorShake 0.15s linear infinite; }
+@keyframes errorShake {
+  0%,100% { transform: translateX(0); }
+  25% { transform: translateX(-3px) rotate(-1deg); }
+  75% { transform: translateX(3px) rotate(1deg); }
+}
+.state-error #screen-bg { fill: #5c1a1a; }
+.state-error #antenna-light { fill: #f87171; animation: antennaGlow 0.3s ease-in-out infinite; }
+.state-error .eye { animation: none; fill: #f87171; }
+
+/* SLEEPING: slow breathe */
+.state-sleeping #robot-body-group { animation: sleepBreathe 3s ease-in-out infinite; }
+@keyframes sleepBreathe {
+  0%,100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(2px) scale(0.98); }
+}
+.state-sleeping .eye { animation: none; transform: scaleY(0.08); }
+.state-sleeping #antenna-light { opacity: 0.2; }
+
+/* NOTIFICATION: bounce + pulse antenna */
+.state-notification #robot-body-group { animation: notifyBounce 0.6s ease-in-out infinite; }
+@keyframes notifyBounce {
+  0%,100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+  50% { transform: translateY(0); }
+  70% { transform: translateY(-3px); }
+}
+.state-notification #antenna-light { fill: #facc15; animation: antennaGlow 0.4s ease-in-out infinite; }
+
+/* ---- Particle effects ---- */
+@keyframes particleUp {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-40px) scale(0.3); }
+}
+@keyframes particleOrbit {
+  0% { transform: rotate(0deg) translateX(40px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(40px) rotate(-360deg); }
+}
+@keyframes sparkle {
+  0%,100% { opacity: 0; transform: scale(0); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.particle {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Fallback label */
 #fallback {
   display: none;
-  color: #d7e1ee;
-  font-size: 18px;
-  text-align: center;
-  padding: 12px 16px;
-  border-radius: 8px;
+  color: #d7e1ee; font-size: 18px; text-align: center;
+  padding: 12px 16px; border-radius: 8px;
   background: rgba(21, 25, 31, 0.72);
 }
 </style>
 </head>
 <body>
-<div class="stage">
-  <img id="character" src="clawd/gif/clawd-idle.gif" alt="Codex Status">
+<div class="stage" id="stage">
+  <svg id="robot-svg" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#4a90d9"/>
+        <stop offset="100%" stop-color="#2563a0"/>
+      </linearGradient>
+      <linearGradient id="screenGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1a2332"/>
+        <stop offset="100%" stop-color="#0f1923"/>
+      </linearGradient>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="shadow">
+        <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+      </filter>
+    </defs>
+
+    <g id="robot-body-group" filter="url(#shadow)">
+      <!-- Antenna -->
+      <line x1="100" y1="45" x2="100" y2="20" stroke="#6b7d95" stroke-width="3" stroke-linecap="round"/>
+      <circle id="antenna-light" cx="100" cy="16" r="5" fill="#60a5fa" filter="url(#glow)"/>
+
+      <!-- Ears -->
+      <rect x="28" y="68" width="10" height="24" rx="4" fill="#3b7cc9"/>
+      <rect x="162" y="68" width="10" height="24" rx="4" fill="#3b7cc9"/>
+
+      <!-- Body -->
+      <rect x="40" y="45" width="120" height="110" rx="18" fill="url(#bodyGrad)"/>
+
+      <!-- Screen -->
+      <rect id="screen-bg" x="52" y="58" width="96" height="60" rx="10" fill="url(#screenGrad)"/>
+
+      <!-- Eyes -->
+      <ellipse class="eye eye-left"  cx="80"  cy="88" rx="8" ry="8" fill="#60a5fa"/>
+      <ellipse class="eye eye-right" cx="120" cy="88" rx="8" ry="8" fill="#60a5fa"/>
+
+      <!-- Mouth area (state icon drawn here via JS) -->
+      <g id="mouth-area"></g>
+
+      <!-- Chest indicator -->
+      <circle cx="100" cy="132" r="4" fill="#34d399" opacity="0.7"/>
+
+      <!-- Arms -->
+      <g class="robot-arm-left" style="transform-origin: 40px 120px;">
+        <rect x="16" y="110" width="24" height="12" rx="6" fill="#3b7cc9"/>
+        <circle cx="16" cy="116" r="7" fill="#4a90d9"/>
+      </g>
+      <g class="robot-arm-right" style="transform-origin: 160px 120px;">
+        <rect x="160" y="110" width="24" height="12" rx="6" fill="#3b7cc9"/>
+        <circle cx="184" cy="116" r="7" fill="#4a90d9"/>
+      </g>
+
+      <!-- Legs -->
+      <rect x="68"  y="155" width="16" height="24" rx="6" fill="#3b7cc9"/>
+      <rect x="116" y="155" width="16" height="24" rx="6" fill="#3b7cc9"/>
+
+      <!-- Feet -->
+      <rect x="62"  y="175" width="28" height="10" rx="5" fill="#2563a0"/>
+      <rect x="110" y="175" width="28" height="10" rx="5" fill="#2563a0"/>
+    </g>
+
+    <!-- Shadow on ground -->
+    <ellipse cx="100" cy="198" rx="45" ry="6" fill="rgba(0,0,0,0.15)"/>
+  </svg>
+
+  <!-- Particle layer -->
+  <div id="particles"></div>
+
+  <!-- Fallback -->
   <div id="fallback">待机</div>
 </div>
-<script>
-var img = document.getElementById('character');
-var fallback = document.getElementById('fallback');
-var currentState = 'idle';
 
-var stateToGif = {
-  thinking: 'clawd/gif/clawd-thinking.gif',
-  typing: 'clawd/gif/clawd-typing.gif',
-  working: 'clawd/gif/clawd-typing.gif',
-  building: 'clawd/gif/clawd-building.gif',
-  tool_call: 'clawd/gif/clawd-building.gif',
-  juggling: 'clawd/gif/clawd-juggling.gif',
-  multi_session: 'clawd/gif/clawd-juggling.gif',
-  sweeping: 'clawd/gif/clawd-sweeping.gif',
-  compacting: 'clawd/gif/clawd-sweeping.gif',
-  happy: 'clawd/gif/clawd-happy.gif',
-  attention: 'clawd/gif/clawd-happy.gif',
-  done: 'clawd/gif/clawd-happy.gif',
-  error: 'clawd/gif/clawd-error.gif',
-  idle: 'clawd/gif/clawd-idle.gif',
-  sleeping: 'clawd/gif/clawd-sleeping.gif',
-  disconnected: 'clawd/gif/clawd-sleeping.gif',
-  notification: 'clawd/gif/clawd-notification.gif'
+<script>
+var stage = document.getElementById('stage');
+var particlesEl = document.getElementById('particles');
+var mouthArea = document.getElementById('mouth-area');
+var fallbackEl = document.getElementById('fallback');
+var robotSvg = document.getElementById('robot-svg');
+var currentState = 'idle';
+var particleTimer = null;
+
+var validStates = [
+  'thinking','typing','working','building','tool_call',
+  'juggling','multi_session','sweeping','compacting',
+  'happy','attention','done',
+  'error',
+  'idle',
+  'sleeping','disconnected',
+  'notification'
+];
+
+/* State aliases → canonical CSS class */
+var stateAlias = {
+  working: 'typing',
+  tool_call: 'building',
+  multi_session: 'juggling',
+  compacting: 'sweeping',
+  attention: 'happy',
+  done: 'happy',
+  disconnected: 'sleeping'
 };
 
 var stateLabels = {
-  thinking: '思考中',
-  typing: '写代码中',
-  working: '写代码中',
-  building: '构建中',
-  tool_call: '执行工具',
-  juggling: '多任务',
-  multi_session: '多任务',
-  sweeping: '整理中',
-  compacting: '整理中',
-  happy: '完成',
-  attention: '完成',
-  done: '完成',
-  error: '出错',
-  idle: '待机',
-  sleeping: '休眠',
-  disconnected: '断开连接',
+  thinking: '思考中', typing: '写代码中', working: '写代码中',
+  building: '构建中', tool_call: '执行工具',
+  juggling: '多任务', multi_session: '多任务',
+  sweeping: '整理中', compacting: '整理中',
+  happy: '完成', attention: '完成', done: '完成',
+  error: '出错', idle: '待机',
+  sleeping: '休眠', disconnected: '断开连接',
   notification: '通知'
 };
 
-function showFallback(state) {
-  img.style.display = 'none';
-  fallback.style.display = 'block';
-  fallback.textContent = stateLabels[state] || '待机';
+/* ---- Mouth / state-icon shapes ---- */
+function setMouth(state) {
+  var svg = '';
+  switch (state) {
+    case 'happy':
+      /* Smile arc */
+      svg = '<path d="M88 103 Q100 115 112 103" stroke="#4ade80" stroke-width="2.5" fill="none" stroke-linecap="round"/>';
+      break;
+    case 'error':
+      /* Zigzag mouth */
+      svg = '<polyline points="85,105 90,100 95,108 100,100 105,108 110,100 115,105" stroke="#f87171" stroke-width="2" fill="none" stroke-linecap="round"/>';
+      break;
+    case 'sleeping':
+      /* Small "o" mouth */
+      svg = '<ellipse cx="100" cy="105" rx="4" ry="3" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.5"/>';
+      break;
+    case 'thinking':
+      /* Wavy mouth */
+      svg = '<path d="M90 105 Q95 100 100 105 Q105 110 110 105" stroke="#60a5fa" stroke-width="2" fill="none" opacity="0.6"/>';
+      break;
+    default:
+      /* Neutral dash */
+      svg = '<line x1="90" y1="105" x2="110" y2="105" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" opacity="0.5"/>';
+  }
+  mouthArea.innerHTML = svg;
 }
 
-function showImage() {
-  img.style.display = 'block';
-  fallback.style.display = 'none';
+/* ---- Particle effects ---- */
+function clearParticles() {
+  if (particleTimer) { clearInterval(particleTimer); particleTimer = null; }
+  particlesEl.innerHTML = '';
 }
 
+function spawnThinkDots() {
+  clearParticles();
+  var dots = '';
+  var delays = [0, 0.4, 0.8];
+  for (var i = 0; i < 3; i++) {
+    var x = 155 + i * 14;
+    var y = 40 - i * 12;
+    dots += '<div style="position:absolute;left:' + x + 'px;top:' + y + 'px;' +
+      'width:' + (8 - i * 2) + 'px;height:' + (8 - i * 2) + 'px;border-radius:50%;' +
+      'background:#60a5fa;opacity:0;animation:sparkle 1.5s ease-in-out infinite ' + delays[i] + 's;"></div>';
+  }
+  particlesEl.innerHTML = dots;
+}
+
+function spawnCodeBrackets() {
+  clearParticles();
+  particleTimer = setInterval(function() {
+    var chars = ['<', '>', '/', '{', '}', '(', ')', ';', '='];
+    var ch = chars[Math.floor(Math.random() * chars.length)];
+    var el = document.createElement('div');
+    el.textContent = ch;
+    el.style.cssText = 'position:absolute;left:' + (80 + Math.random() * 140) + 'px;' +
+      'top:' + (60 + Math.random() * 60) + 'px;color:#60a5fa;font-size:14px;font-family:monospace;' +
+      'opacity:0.8;pointer-events:none;animation:particleUp 1.2s ease-out forwards;';
+    particlesEl.appendChild(el);
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 1200);
+  }, 300);
+}
+
+function spawnBuildSparks() {
+  clearParticles();
+  particleTimer = setInterval(function() {
+    var el = document.createElement('div');
+    el.style.cssText = 'position:absolute;left:' + (170 + Math.random() * 30) + 'px;' +
+      'top:' + (90 + Math.random() * 30) + 'px;width:4px;height:4px;border-radius:50%;' +
+      'background:#fbbf24;pointer-events:none;animation:particleUp 0.8s ease-out forwards;';
+    particlesEl.appendChild(el);
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 800);
+  }, 150);
+}
+
+function spawnJuggleBalls() {
+  clearParticles();
+  var colors = ['#f87171','#60a5fa','#4ade80','#fbbf24'];
+  var balls = '';
+  for (var i = 0; i < colors.length; i++) {
+    balls += '<div style="position:absolute;left:50%;top:50%;width:10px;height:10px;' +
+      'border-radius:50%;background:' + colors[i] + ';margin:-5px;' +
+      'animation:particleOrbit ' + (1.5 + i * 0.3) + 's linear infinite ' + (i * 0.2) + 's;"></div>';
+  }
+  particlesEl.innerHTML = balls;
+}
+
+function spawnSleepZzz() {
+  clearParticles();
+  particleTimer = setInterval(function() {
+    var el = document.createElement('div');
+    el.textContent = 'Z';
+    el.style.cssText = 'position:absolute;left:' + (155 + Math.random() * 20) + 'px;' +
+      'top:60px;color:#60a5fa;font-size:' + (12 + Math.random() * 8) + 'px;font-weight:bold;' +
+      'opacity:0.7;pointer-events:none;animation:particleUp 2s ease-out forwards;';
+    particlesEl.appendChild(el);
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 2000);
+  }, 600);
+}
+
+function spawnHappySparkles() {
+  clearParticles();
+  particleTimer = setInterval(function() {
+    var el = document.createElement('div');
+    el.textContent = '✦';
+    var x = 40 + Math.random() * 220;
+    var y = 20 + Math.random() * 160;
+    el.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;' +
+      'color:#fbbf24;font-size:' + (10 + Math.random() * 10) + 'px;' +
+      'pointer-events:none;animation:sparkle 0.8s ease-in-out forwards;';
+    particlesEl.appendChild(el);
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 800);
+  }, 250);
+}
+
+function spawnNotifyPulse() {
+  clearParticles();
+  var bell = '<div style="position:absolute;left:130px;top:20px;font-size:22px;' +
+    'animation:sparkle 0.8s ease-in-out infinite;">!</div>';
+  particlesEl.innerHTML = bell;
+}
+
+function spawnSweepDust() {
+  clearParticles();
+  particleTimer = setInterval(function() {
+    var el = document.createElement('div');
+    el.style.cssText = 'position:absolute;left:' + (20 + Math.random() * 40) + 'px;' +
+      'top:' + (150 + Math.random() * 20) + 'px;width:5px;height:5px;border-radius:50%;' +
+      'background:#94a3b8;opacity:0.5;pointer-events:none;animation:particleUp 1s ease-out forwards;';
+    particlesEl.appendChild(el);
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 1000);
+  }, 200);
+}
+
+function spawnErrorFlash() {
+  clearParticles();
+  var warn = '<div style="position:absolute;left:135px;top:30px;color:#f87171;font-size:20px;' +
+    'font-weight:bold;animation:sparkle 0.6s ease-in-out infinite;">⚠</div>';
+  particlesEl.innerHTML = warn;
+}
+
+/* ---- State change ---- */
 function setCodexState(state) {
-  if (!stateToGif[state]) {
-    state = 'idle';
-  }
-  if (state === currentState && img.style.display !== 'none') {
-    return;
-  }
+  if (validStates.indexOf(state) < 0) state = 'idle';
+  if (state === currentState) return;
   currentState = state;
-  img.classList.add('switching');
-  setTimeout(function() {
-    img.onerror = function() { showFallback(state); };
-    img.onload = function() {
-      showImage();
-      img.classList.remove('switching');
-    };
-    img.src = stateToGif[state];
-  }, 100);
+
+  /* Resolve alias */
+  var cssState = stateAlias[state] || state;
+
+  /* Remove old state classes */
+  stage.className = 'stage state-' + cssState;
+
+  /* Set mouth */
+  setMouth(cssState);
+
+  /* Set particles */
+  clearParticles();
+  switch (cssState) {
+    case 'thinking':     spawnThinkDots(); break;
+    case 'typing':       spawnCodeBrackets(); break;
+    case 'building':     spawnBuildSparks(); break;
+    case 'juggling':     spawnJuggleBalls(); break;
+    case 'sweeping':     spawnSweepDust(); break;
+    case 'happy':        spawnHappySparkles(); break;
+    case 'error':        spawnErrorFlash(); break;
+    case 'sleeping':     spawnSleepZzz(); break;
+    case 'notification': spawnNotifyPulse(); break;
+  }
+
+  /* Show robot, hide fallback */
+  robotSvg.style.display = 'block';
+  fallbackEl.style.display = 'none';
 }
 
-img.onerror = function() { showFallback(currentState); };
-img.onload = function() { showImage(); };
+/* Init with idle */
+setMouth('idle');
 </script>
 </body>
 </html>

@@ -8,7 +8,7 @@
 
 桌面端运行一个轻量 HTTP 服务，解析 `~/.codex/sessions/` 下的 JSONL 会话日志，
 将事件映射为状态（思考 → 写代码 → 完成 → 空闲 → 休眠），
-手机端通过同局域网轮询接口，用 Clawd 动画角色实时展示当前状态。
+手机端通过同局域网轮询接口，用原创 SVG 机器人动画角色实时展示当前状态。
 
 ## 项目结构
 
@@ -74,7 +74,7 @@ JSONL rollout 文件，将 Codex 事件实时映射为以下状态：
 
 手机端收到的 API 响应包含：
 
-- `animation` — 对应的 Clawd 角色 GIF 动画名称
+- `animation` — 对应的角色动画状态名称
 - `statusLabel` — 中文状态短语
 - `headline` / `detail` — 状态描述
 - `freshness` — 距上次更新的人类可读时间
@@ -116,14 +116,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-codex-mobile
 
 构建产物输出到 `dist/codex-monitor-android.apk`。APK 属于 Release/本地构建产物，不纳入源码仓库版本控制。
 
-## 第三方素材
+## 状态角色
 
-手机端的 Clawd 角色动画 GIF（`android/assets/clawd/gif/`）来自
-[clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) 项目，使用 MIT 许可证。
+Android 客户端通过内嵌的 SVG + CSS 动画展示状态角色（`android/assets/status-character.html`），
+为项目原创美术，不依赖任何第三方图像资源。
 
-JSONL 事件到状态的映射逻辑参考了 `clawd-on-desk` 中的 `codex.js` 和 `codex-log-monitor.js`。
-
-详见 [NOTICE.md](NOTICE.md)。
+JSONL 事件到状态的映射逻辑参考了 [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk)
+中的状态映射，详见 [NOTICE.md](NOTICE.md)。
 
 ## 免责声明
 
