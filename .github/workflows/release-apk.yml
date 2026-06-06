@@ -80,5 +80,9 @@ jobs:
           tag_name: ${{ steps.release.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: Codex Monitor ${{ steps.release.outputs.tag }}
+          body: |
+            Latest Codex Monitor Android APK.
+
+            Download `codex-monitor-android.apk` from the assets below.
           files: dist/codex-monitor-android.apk
-          generate_release_notes: true
+          generate_release_notes: false
