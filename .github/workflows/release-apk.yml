@@ -67,12 +67,14 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            "tag=${{ inputs.tag_name }}" >> $env:GITHUB_OUTPUT
+            $tag = "${{ inputs.tag_name }}"
           } elseif ("${{ github.ref_type }}" -eq "tag") {
-            "tag=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+            $tag = "${{ github.ref_name }}"
           } else {
-            "tag=latest" >> $env:GITHUB_OUTPUT
+            $sha = "${{ github.sha }}"
+            $tag = "apk-${{ github.run_number }}-" + $sha.Substring(0, 7)
           }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
@@ -81,7 +83,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Codex Monitor ${{ steps.release.outputs.tag }}
           body: |
-            Latest Codex Monitor Android APK.
+            Codex Monitor Android APK build for `${{ github.sha }}`.
 
             Download `codex-monitor-android.apk` from the assets below.
           files: dist/codex-monitor-android.apk
