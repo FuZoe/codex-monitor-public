@@ -2,6 +2,8 @@ name: Release Android APK
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -37,6 +39,12 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.1"
 
+      - name: Restore CI debug signing key
+        uses: actions/cache@v4
+        with:
+          path: .github/ci-debug.keystore
+          key: codex-monitor-ci-debug-keystore-v1
+
       - name: Build APK
         shell: pwsh
         env:
@@ -44,6 +52,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_DEBUG_KEYSTORE_PATH: .github/ci-debug.keystore
         run: |
           ./scripts/build-codex-mobile-apk.ps1
 
@@ -59,8 +68,10 @@ jobs:
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             "tag=${{ inputs.tag_name }}" >> $env:GITHUB_OUTPUT
-          } else {
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
             "tag=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          } else {
+            "tag=latest" >> $env:GITHUB_OUTPUT
           }
 
       - name: Create or update GitHub release
