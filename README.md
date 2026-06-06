@@ -83,7 +83,7 @@ The desktop server now includes a `CodexSessionMonitor` that watches
 `~/.codex/sessions/` for JSONL rollout files and maps events to states
 in real time. The phone receives:
 
-- `animation` — which character GIF to show (thinking, typing, building, etc.)
+- `animation` — which character animation state to show (thinking, typing, building, etc.)
 - `statusLabel` — Chinese short status phrase
 - `headline` / `detail` — description of what's happening
 - `freshness` — human-readable time since last update

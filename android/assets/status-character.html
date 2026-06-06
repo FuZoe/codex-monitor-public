@@ -13,13 +13,14 @@ html, body {
   font-family: system-ui, sans-serif;
 }
 .stage {
-  width: 302px; height: 300px;
+  width: 100%; height: 100%;
+  max-width: 302px; max-height: 300px;
   position: relative;
   display: flex; align-items: center; justify-content: center;
 }
 
 /* ---- Robot SVG ---- */
-#robot-svg { width: 200px; height: 220px; overflow: visible; }
+#robot-svg { width: 66%; max-width: 200px; height: auto; overflow: visible; }
 
 /* ---- Base float ---- */
 @keyframes float { 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-6px); } }
