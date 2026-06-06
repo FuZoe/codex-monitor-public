@@ -2,6 +2,8 @@ name: Release Android APK
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -59,8 +61,10 @@ jobs:
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             "tag=${{ inputs.tag_name }}" >> $env:GITHUB_OUTPUT
-          } else {
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
             "tag=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          } else {
+            "tag=latest" >> $env:GITHUB_OUTPUT
           }
 
       - name: Create or update GitHub release
