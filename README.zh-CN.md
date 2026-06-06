@@ -4,6 +4,10 @@
 
 # Codex Monitor
 
+<p align="center">
+  <img src="screenshot-typing.jpg" alt="Codex Monitor 截图" width="300">
+</p>
+
 在手机上实时监控 Codex CLI 的工作状态和额度用量。
 
 桌面端运行一个轻量 HTTP 服务，解析 `~/.codex/sessions/` 下的 JSONL 会话日志，

@@ -4,6 +4,10 @@
 
 # Codex Monitor
 
+<p align="center">
+  <img src="screenshot-typing.jpg" alt="Codex Monitor screenshot" width="300">
+</p>
+
 Codex Monitor is a small desktop service plus a full-screen Android app for watching Codex status from a phone on the same Wi-Fi.
 
 ## Structure
