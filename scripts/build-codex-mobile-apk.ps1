@@ -35,6 +35,7 @@ $keystore = Join-Path $build "debug.keystore"
 $keyAlias = "androiddebugkey"
 $keystorePassword = "android"
 $keyPassword = "android"
+$debugKeystorePath = $env:ANDROID_DEBUG_KEYSTORE_PATH
 
 function Invoke-Checked {
   param(
@@ -85,9 +86,20 @@ if ($env:ANDROID_KEYSTORE_BASE64) {
     throw "ANDROID_KEYSTORE_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set"
   }
 } else {
-  keytool -genkeypair -v -keystore $keystore -storepass $keystorePassword -keypass $keyPassword -alias $keyAlias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Codex Monitor,O=Codex,C=US" | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    throw "keytool failed with exit code $LASTEXITCODE"
+  if ($debugKeystorePath) {
+    if ([System.IO.Path]::IsPathRooted($debugKeystorePath)) {
+      $keystore = $debugKeystorePath
+    } else {
+      $keystore = Join-Path $repoRoot $debugKeystorePath
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $keystore) | Out-Null
+  }
+
+  if (-not (Test-Path -LiteralPath $keystore)) {
+    keytool -genkeypair -v -keystore $keystore -storepass $keystorePassword -keypass $keyPassword -alias $keyAlias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Codex Monitor,O=Codex,C=US" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      throw "keytool failed with exit code $LASTEXITCODE"
+    }
   }
 }
 Invoke-Checked $apksigner @("sign", "--ks", $keystore, "--ks-key-alias", $keyAlias, "--ks-pass", "pass:$keystorePassword", "--key-pass", "pass:$keyPassword", "--out", $apk, $aligned)
