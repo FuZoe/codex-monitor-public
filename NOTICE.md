@@ -6,10 +6,10 @@ The animation GIF files in `android/assets/clawd/gif/` are copied from the
 `assets/gif/` directory of the `rullerzhou-afk/clawd-on-desk` project:
 
 - Source repository: https://github.com/rullerzhou-afk/clawd-on-desk
-- Source commit used locally: `5e4326787f809293f866d721115ae918823bc7f1`
-- Local source path: `F:\GitRepos\clawd-on-desk\assets\gif\`
+- Source commit used for attribution: `5e4326787f809293f866d721115ae918823bc7f1`
+- Source path in the upstream repository: `assets/gif/`
 - Destination path: `android/assets/clawd/gif/`
-- License file present in the local source copy: MIT License
+- License file present in the source checkout at that commit: MIT License
 - Copyright: Copyright (c) 2026 rullerzhou-afk
 
 The current upstream project may use different licensing terms for newer
