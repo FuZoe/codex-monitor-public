@@ -52,7 +52,7 @@ Remove-Item -LiteralPath $build -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $gen, $classes, $dex, $dist | Out-Null
 
 Invoke-Checked $aapt2 @("compile", "--dir", (Join-Path $root "res"), "-o", (Join-Path $build "res.zip"))
-Invoke-Checked $aapt2 @("link", "-I", $androidJar, "--manifest", (Join-Path $root "AndroidManifest.xml"), "--java", $gen, "-o", $unsigned, (Join-Path $build "res.zip"))
+Invoke-Checked $aapt2 @("link", "-I", $androidJar, "--manifest", (Join-Path $root "AndroidManifest.xml"), "--java", $gen, "-A", (Join-Path $root "assets"), "-o", $unsigned, (Join-Path $build "res.zip"))
 
 $sources = @(
   (Join-Path $root "src\com\codexmonitor\MainActivity.java"),
