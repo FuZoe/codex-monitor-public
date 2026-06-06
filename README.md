@@ -1,3 +1,7 @@
+<p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">中文</a>
+</p>
+
 # Codex Monitor
 
 Codex Monitor is a small desktop service plus a full-screen Android app for watching Codex status from a phone on the same Wi-Fi.
