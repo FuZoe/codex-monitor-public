@@ -534,7 +534,7 @@ class CodexSessionMonitor:
             return {
                 "status": self.current_state,
                 "statusLabel": self.current_label,
-                "headline": f"Codex {self.current_label}",
+                "headline": self._format_headline(),
                 "detail": self.current_detail,
                 "animation": self.current_animation,
                 "updatedAt": updated_at,
@@ -544,6 +544,11 @@ class CodexSessionMonitor:
                 "quotas": self._get_latest_quotas(),
                 "quotaSource": self._get_quota_source(),
             }
+
+    def _format_headline(self):
+        if self.current_state == "juggling":
+            return f"并行任务数量：{self.active_sessions}"
+        return f"Codex {self.current_label}"
 
     def _get_latest_quotas(self):
         latest_time = ""
